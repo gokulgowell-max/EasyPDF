@@ -1,2509 +1,308 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <base target="_top">
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Tailwind CSS for utility classes -->
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <!-- Google Fonts: Outfit (headings) and Inter (body) -->
+    <meta name="description" content="EasyPDF — Upload, rearrange, and merge documents into a single PDF. Extract text from images with OCR. Supports PDF, images, and DOCX files.">
+    <title>EasyPDF — Merge, Edit & OCR Tools</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <style>
-      /* Global Design System & Variables */
-      :root {
-        --bg-space: #070913;
-        --card-glass: rgba(13, 17, 33, 0.7);
-        --border-glass: rgba(255, 255, 255, 0.06);
-        --border-active: rgba(99, 102, 241, 0.35);
-        --text-primary: #f3f4f6;
-        --text-secondary: #9ca3af;
-        --accent-grad: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-        --accent-grad-hover: linear-gradient(135deg, #4f46e5 0%, #9333ea 100%);
-        --glow-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
-        
-        --body-bg-radial: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0, transparent 45%),
-                          radial-gradient(at 50% 0%, rgba(168, 85, 247, 0.08) 0, transparent 45%),
-                          radial-gradient(at 100% 0%, rgba(59, 130, 246, 0.12) 0, transparent 45%);
-        
-        --nav-bg: rgba(7, 9, 19, 0.75);
-        --modal-bg: rgba(13, 17, 33, 0.95);
-        --input-bg: rgba(255, 255, 255, 0.02);
-        --input-border: rgba(255, 255, 255, 0.08);
-        --input-text: #f3f4f6;
-        --option-bg: #0b0f19;
-      }
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 
-      /* Light Theme Variables */
-      body.light-theme {
-        --bg-space: #f1f5f9;
-        --card-glass: rgba(255, 255, 255, 0.85);
-        --border-glass: rgba(15, 23, 42, 0.08);
-        --border-active: rgba(99, 102, 241, 0.5);
-        --text-primary: #0f172a;
-        --text-secondary: #475569;
-        
-        --body-bg-radial: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.06) 0, transparent 45%),
-                          radial-gradient(at 50% 0%, rgba(168, 85, 247, 0.04) 0, transparent 45%),
-                          radial-gradient(at 100% 0%, rgba(59, 130, 246, 0.06) 0, transparent 45%);
-        
-        --nav-bg: rgba(248, 250, 252, 0.85);
-        --modal-bg: rgba(255, 255, 255, 0.98);
-        --input-bg: #ffffff;
-        --input-border: rgba(15, 23, 42, 0.15);
-        --input-text: #0f172a;
-        --option-bg: #ffffff;
-        --glow-shadow: 0 0 15px rgba(99, 102, 241, 0.06);
-      }
+    <!-- PDF.js for rendering PDF page previews -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- pdf-lib for creating / merging PDFs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <!-- SortableJS for drag-and-drop reordering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <!-- mammoth.js for DOCX to HTML -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 
-      body {
-        background-color: var(--bg-space);
-        color: var(--text-primary);
-        font-family: 'Inter', sans-serif;
-        -webkit-font-smoothing: antialiased;
-        background-image: var(--body-bg-radial);
-        background-attachment: fixed;
-        min-height: 100vh;
-        transition: background-color 0.3s ease, color 0.3s ease;
-      }
-
-      h1, h2, h3, h4, h5, h6 {
-        font-family: 'Outfit', sans-serif;
-      }
-
-      /* Premium Glass Navbar */
-      nav.glass-nav {
-        background: var(--nav-bg);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border-bottom: 1px solid var(--border-glass);
-        position: sticky;
-        top: 0;
-        z-index: 100;
-        transition: background-color 0.3s ease, border-color 0.3s ease;
-      }
-
-      .logo-gradient {
-        background: linear-gradient(135deg, #c7d2fe 0%, #f3e8ff 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 800;
-        letter-spacing: -0.5px;
-      }
-
-      body.light-theme .logo-gradient {
-        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-
-      /* Custom Premium Scrollbar */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: rgba(13, 17, 33, 0.2);
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(156, 163, 175, 0.15);
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(156, 163, 175, 0.3);
-      }
-
-      /* Glassmorphic Container Cards */
-      .glass-card {
-        background: var(--card-glass);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid var(--border-glass);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
-        border-radius: 16px;
-        transition: background-color 0.3s ease, border-color 0.3s ease;
-      }
-
-      /* Custom Button Overlays */
-      .btn-premium-gradient {
-        background: var(--accent-grad);
-        color: #ffffff;
-        font-weight: 600;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: var(--glow-shadow);
-      }
-      .btn-premium-gradient:hover {
-        background: var(--accent-grad-hover);
-        transform: translateY(-1px);
-        box-shadow: 0 0 25px rgba(99, 102, 241, 0.3);
-      }
-      .btn-premium-gradient:active {
-        transform: translateY(0);
-      }
-      
-      .btn-premium-secondary {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid var(--border-glass);
-        color: var(--text-primary);
-        font-weight: 600;
-        transition: all 0.2s ease;
-      }
-      .btn-premium-secondary:hover {
-        background: rgba(156, 163, 175, 0.08);
-        border-color: var(--border-active);
-      }
-
-      /* Premium Modal System */
-      #appModalBox {
-        background: var(--modal-bg);
-        backdrop-filter: blur(24px);
-        -webkit-backdrop-filter: blur(24px);
-        border: 1px solid var(--border-glass);
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-        border-radius: 20px;
-        transform: scale(0.95);
-        opacity: 0;
-        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-      }
-
-      #appModalOverlay.flex #appModalBox {
-        transform: scale(1);
-        opacity: 1;
-      }
-
-      /* Glowing Focus Inputs */
-      .input-premium {
-        background: var(--input-bg) !important;
-        border: 1px solid var(--input-border) !important;
-        color: var(--input-text) !important;
-        transition: all 0.2s ease-in-out !important;
-      }
-      .input-premium:focus {
-        border-color: #6366f1 !important;
-        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
-        background: var(--input-bg) !important;
-        outline: none !important;
-      }
-
-      /* Explicit Dropdown Option Styling for Universal Visibility */
-      select option {
-        background-color: var(--option-bg) !important;
-        color: var(--input-text) !important;
-      }
-
-      /* Premium High-Contrast Light Theme Overrides */
-      body.light-theme {
-        color: #1e293b !important;
-        background: #f6f8fa !important;
-        background-image: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.05) 0, transparent 50%),
-                          radial-gradient(at 100% 0%, rgba(168, 85, 247, 0.05) 0, transparent 50%) !important;
-      }
-      body.light-theme label {
-        color: #475569 !important; /* slate-600 */
-        font-weight: 600 !important;
-        font-size: 0.75rem !important;
-        letter-spacing: 0.05em !important;
-      }
-      body.light-theme .text-gray-400,
-      body.light-theme .text-gray-500 {
-        color: #64748b !important; /* slate-500 */
-      }
-      body.light-theme .text-gray-200,
-      body.light-theme .text-gray-300 {
-        color: #334155 !important; /* slate-700 */
-      }
-      body.light-theme .text-indigo-400 {
-        color: #4f46e5 !important; /* Indigo 600 */
-      }
-      body.light-theme .text-red-400 {
-        color: #e11d48 !important; /* Rose 600 */
-      }
-      body.light-theme .logo-gradient {
-        background: linear-gradient(135deg, #4f46e5 0%, #9333ea 100%) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-      }
-      
-      body.light-theme .glass-card {
-        background: rgba(255, 255, 255, 0.95);
-        border: 1px solid rgba(226, 232, 240, 0.8);
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.03);
-      }
-      
-      .theme-bg-adapt { background-color: var(--bg-space); }
-      body.light-theme .theme-bg-adapt { background-color: #f9fafb; }
-      
-      tr.hover-highlight-row:hover td {
-        background-color: rgba(99, 102, 241, 0.15) !important;
-      }
-      
-      body.light-theme nav.glass-nav {
-        background: rgba(255, 255, 255, 0.8) !important;
-        border-bottom-color: rgba(99, 102, 241, 0.1) !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02) !important;
-      }
-
-      body.light-theme .section-title {
-        background: linear-gradient(135deg, #1e1b4b 0%, #4f46e5 100%) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-        color: #4f46e5 !important;
-        border-bottom-color: rgba(99, 102, 241, 0.1) !important;
-      }
-
-      body.light-theme .glass-card {
-        background: #ffffff !important;
-        border: 1px solid rgba(99, 102, 241, 0.12) !important;
-        box-shadow: 0 10px 30px rgba(99, 102, 241, 0.05) !important;
-      }
-      
-      /* Redesign identity details container in light mode (no heavy dark mud grey background) */
-      body.light-theme .bg-black.bg-opacity-30,
-      body.light-theme .bg-black.bg-opacity-20,
-      body.light-theme .bg-black.bg-opacity-25 {
-        background-color: rgba(99, 102, 241, 0.02) !important;
-        border: 1px solid rgba(99, 102, 241, 0.08) !important;
-        box-shadow: inset 0 1px 2px rgba(99, 102, 241, 0.01) !important;
-      }
-      
-      body.light-theme .kpi-card {
-        background: #ffffff !important;
-        border: 1px solid rgba(99, 102, 241, 0.1) !important;
-        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.02) !important;
-      }
-      body.light-theme #kpiCountDisplay {
-        color: #0f172a !important; /* slate-900 */
-      }
-      body.light-theme #kpiScopeStatusText {
-        color: #475569 !important;
-      }
-      
-      /* Light mode inputs and selectors */
-      body.light-theme .input-premium {
-        background: #ffffff !important;
-        border: 1px solid rgba(99, 102, 241, 0.18) !important;
-        color: #1e293b !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
-      }
-      body.light-theme .input-premium:focus {
-        border-color: #4f46e5 !important;
-        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12) !important;
-        background: #ffffff !important;
-      }
-      body.light-theme select option {
-        background-color: #ffffff !important;
-        color: #1e293b !important;
-      }
-      
-      /* Reset country code select block to match adjacent input details */
-      body.light-theme .country-code-select {
-        background-color: #ffffff !important;
-        color: #1e293b !important;
-        border: 1px solid rgba(99, 102, 241, 0.18) !important;
-      }
-      
-      /* Light mode tables */
-      body.light-theme thead {
-        background-color: rgba(99, 102, 241, 0.03) !important;
-        border-bottom: 2px solid rgba(99, 102, 241, 0.08) !important;
-      }
-      body.light-theme thead th {
-        color: #475569 !important; /* slate-600 */
-        font-weight: 700 !important;
-      }
-      body.light-theme tr {
-        border-bottom-color: rgba(99, 102, 241, 0.05) !important;
-      }
-      body.light-theme tr.log-row:hover {
-        background-color: rgba(99, 102, 241, 0.02) !important;
-      }
-      body.light-theme tr.log-row td {
-        color: #334155 !important;
-      }
-      
-      /* Leaderboard rows in light mode */
-      body.light-theme #perfCaptureArea {
-        background-color: #ffffff !important;
-        border-color: rgba(99, 102, 241, 0.08) !important;
-      }
-      body.light-theme #perfCaptureArea thead {
-        background-color: rgba(99, 102, 241, 0.02) !important;
-        border-bottom-color: rgba(99, 102, 241, 0.06) !important;
-      }
-      body.light-theme #perfTableBody tr {
-        border-bottom-color: rgba(0, 0, 0, 0.04) !important;
-      }
-      body.light-theme #perfTableBody tr:hover {
-        background-color: rgba(99, 102, 241, 0.01) !important;
-      }
-      body.light-theme #perfTableBody tr.bg-yellow-50 {
-        background-color: rgba(251, 191, 36, 0.04) !important;
-      }
-
-      /* Secondary premium button in light mode */
-      body.light-theme .btn-premium-secondary {
-        background: #ffffff !important;
-        border: 1px solid rgba(99, 102, 241, 0.15) !important;
-        color: #4f46e5 !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
-      }
-      body.light-theme .btn-premium-secondary:hover {
-        background: rgba(99, 102, 241, 0.04) !important;
-        border-color: rgba(99, 102, 241, 0.3) !important;
-      }
-      
-      /* Project cards in light mode */
-      body.light-theme .project-card {
-        background: #ffffff !important;
-        border: 1px solid rgba(99, 102, 241, 0.08) !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.02) !important;
-      }
-      body.light-theme .project-card:hover {
-        border-color: rgba(99, 102, 241, 0.35) !important;
-        box-shadow: 0 10px 25px rgba(99, 102, 241, 0.08) !important;
-      }
-      body.light-theme .project-card h4 {
-        color: #0f172a !important;
-      }
-      
-      /* Upload Drop Zone light styles */
-      body.light-theme .upload-zone {
-        border-color: rgba(99, 102, 241, 0.25) !important;
-        background-color: rgba(99, 102, 241, 0.01) !important;
-      }
-      body.light-theme .upload-zone:hover {
-        border-color: rgba(99, 102, 241, 0.45) !important;
-        background-color: rgba(99, 102, 241, 0.02) !important;
-      }
-      body.light-theme .upload-zone.dragover {
-        border-color: #4f46e5 !important;
-        background-color: rgba(79, 70, 229, 0.05) !important;
-      }
-      body.light-theme #dropZoneText {
-        color: #4f46e5 !important;
-      }
-      body.light-theme #dropZoneSubtext {
-        color: #64748b !important;
-      }
-      body.light-theme #dropZoneIcon {
-        filter: drop-shadow(0 4px 6px rgba(99, 102, 241, 0.15));
-      }
-      body.light-theme .admin-header-gradient {
-        background: linear-gradient(135deg, #0f172a 0%, #312e81 100%) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-      }
-    </style>
-  </head>
-  <body class="font-sans antialiased">
-
-    <!-- Global Navigation Header bar -->
-    <nav class="glass-nav py-4 px-6 flex justify-between items-center shadow-lg">
-      <div class="flex items-center gap-3">
-        <span class="text-2xl font-black logo-gradient">Dynamic Document Hub</span>
-        <span class="h-2 w-2 rounded-full bg-green-500 animate-pulse" title="System Connected"></span>
-      </div>
-      <div class="flex items-center gap-3">
-        <!-- Theme Toggle button -->
-        <button id="themeToggleBtn" onclick="toggleAppTheme()" class="btn-premium-secondary p-2.5 rounded-xl text-sm transition flex items-center justify-center" title="Toggle Light/Dark Theme">
-          🌙
-        </button>
-        <button id="navToggleBtn" onclick="toggleView()" class="btn-premium-secondary hover:text-white px-5 py-2.5 rounded-xl transition text-sm font-semibold disabled:opacity-60">
-          🔒 Manager Workspace
-        </button>
-      </div>
-    </nav>
-
-    <!-- Main View Workspace Containers -->
-    <div class="container mx-auto p-4 sm:p-6 md:p-8">
-      <div id="userView" class="block transition-all duration-300">
-        <!-- Custom styles for UserForm -->
-<style>
-  .section-title {
-    background: linear-gradient(95deg, #a5b4fc 0%, #e9d5ff 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 700;
-  }
-
-  .upload-zone {
-    border: 2px dashed rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.01);
-    border-radius: 14px;
-    padding: 28px 20px;
-    text-align: center;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    cursor: pointer;
-  }
-  .upload-zone.dragover {
-    border-color: #6366f1;
-    background: rgba(99, 102, 241, 0.04);
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
-  }
-  .upload-zone:hover:not(.has-file) {
-    border-color: rgba(255, 255, 255, 0.25);
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  /* Skeleton loader styles */
-  .skeleton-field {
-    height: 40px;
-    background: linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.02) 75%);
-    background-size: 200% 100%;
-    animation: skeleton-wave 1.6s infinite linear;
-    border-radius: 10px;
-  }
-  .skeleton-label {
-    width: 35%;
-    height: 14px;
-    margin-bottom: 8px;
-    background: linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.02) 75%);
-    background-size: 200% 100%;
-    animation: skeleton-wave 1.6s infinite linear;
-    border-radius: 4px;
-  }
-  @keyframes skeleton-wave {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
-  /* Progress Bar styles */
-  .progress-container {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border-glass);
-    border-radius: 99px;
-    height: 6px;
-    overflow: hidden;
-  }
-  .progress-fill {
-    background: var(--accent-grad);
-    width: 0%;
-    height: 100%;
-    transition: width 0.4s ease-out;
-  }
-</style>
-
-<!-- Uploader Form Card -->
-<div class="glass-card max-w-2xl mx-auto p-6 sm:p-8">
-  <h2 class="text-2xl font-extrabold mb-6 section-title border-b border-gray-800 pb-3">Upload Candidate Document</h2>
-
-  <form id="uploadSubmissionForm" onsubmit="processDocumentFormSubmit(event)">
-    
-    <!-- Recruiter and Project selectors -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Recruiter Name</label>
-        <select id="formRecruiterSelect" class="input-premium w-full p-3 rounded-xl text-sm bg-gray-900 border" required>
-          <option value="">-- Choose Name --</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Assign to Project</label>
-        <select id="formProjectSelect" onchange="renderDynamicFieldsInstantly(this.value)" class="input-premium w-full p-3 rounded-xl text-sm bg-gray-900 border" required>
-          <option value="">-- Choose Project Track --</option>
-        </select>
-      </div>
+</head>
+<body>
+    <!-- Animated background blobs -->
+    <div class="bg-blobs" aria-hidden="true">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
     </div>
 
-    <!-- Identity details inputs -->
-    <div class="p-5 rounded-2xl bg-black bg-opacity-30 border border-white border-opacity-5 space-y-4 mb-6">
-      <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">Mandatory Identity Details</h3>
+    <div class="app-container">
+        <!-- ─── Header ─── -->
+        <header id="app-header" class="app-header">
+            <div class="header-left">
+                <div class="logo">
+                    <svg class="logo-icon" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4" y="2" width="24" height="32" rx="3" stroke="url(#g1)" stroke-width="2.5"/>
+                        <rect x="12" y="8" width="24" height="32" rx="3" fill="url(#g2)" fill-opacity=".25" stroke="url(#g2)" stroke-width="2.5"/>
+                        <path d="M18 18h12M18 23h8M18 28h10" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
+                        <defs>
+                            <linearGradient id="g1" x1="4" y1="2" x2="28" y2="34" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#a78bfa"/><stop offset="1" stop-color="#6d28d9"/>
+                            </linearGradient>
+                            <linearGradient id="g2" x1="12" y1="8" x2="36" y2="40" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#818cf8"/><stop offset="1" stop-color="#4f46e5"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    <h1 class="logo-text">Easy<span>PDF</span></h1>
+                </div>
 
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1.5">Candidate Name (As Per The Passport Only)</label>
-        <input type="text" id="formCandidateName" class="input-premium w-full p-3 rounded-xl uppercase text-sm" required placeholder="JOHN DOE" oninput="this.value = this.value.toUpperCase()">
-      </div>
+            </div>
 
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1.5">Passport Number (Letters & Numbers Only - No Spaces)</label>
-        <input type="text" id="formPassportNumber" pattern="^[A-Za-z0-9]+$" class="input-premium w-full p-3 rounded-xl uppercase text-sm" required placeholder="A1234567" oninput="this.value = this.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase()">
-      </div>
+            <div class="header-center">
+                <div class="filename-group">
+                    <label for="filename-input" class="filename-label">File name</label>
+                    <input id="filename-input" class="filename-input" type="text" placeholder="my-document" spellcheck="false" autocomplete="off">
+                    <span class="filename-ext">.pdf</span>
+                </div>
+            </div>
 
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1.5">Mobile Contact Number(s)</label>
-        <div id="phoneInputsContainer" class="space-y-3">
-          <div class="flex gap-2 phone-row">
-            <select class="p-3 rounded-xl country-code-select bg-gray-900 border border-white border-opacity-10 text-xs text-white max-w-[130px]" required></select>
-            <input type="text" pattern="^[0-9]+$" oninput="this.value=this.value.replace(/[^0-9]/g,'')" class="input-premium flex-1 p-3 rounded-xl text-sm phone-digits" placeholder="9876543210" required>
-          </div>
+            <div class="header-right">
+                <button id="btn-clear" class="btn btn-ghost" title="Clear all" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    <span>Clear All</span>
+                </button>
+                <div class="compression-container">
+                    <select id="compression-select" class="compression-select" title="Output PDF Compression">
+                        <option value="none" selected>No Compression</option>
+                        <option value="medium">Medium Compression</option>
+                        <option value="high">High Compression</option>
+                    </select>
+                </div>
+                <button id="btn-add-more" class="btn btn-outline" title="Add more files" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    <span>Add Files</span>
+                </button>
+                <button id="btn-make-pdf" class="btn btn-primary" title="Merge and download PDF" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span>Make PDF</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- ─── Upload Zone (shown when no files) ─── -->
+        <section id="upload-zone" class="upload-zone">
+            <div class="upload-zone-inner" id="drop-area">
+                <div class="upload-icon-wrapper">
+                    <svg class="upload-icon" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="10" y="18" width="36" height="48" rx="4" stroke="url(#ug1)" stroke-width="2.5" stroke-dasharray="4 3"/>
+                        <rect x="34" y="14" width="36" height="48" rx="4" fill="#1e1b4b" fill-opacity=".4" stroke="url(#ug2)" stroke-width="2.5"/>
+                        <path d="M52 32v16m-8-8h16" stroke="url(#ug2)" stroke-width="2.5" stroke-linecap="round"/>
+                        <defs>
+                            <linearGradient id="ug1" x1="10" y1="18" x2="46" y2="66" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#a78bfa"/><stop offset="1" stop-color="#6d28d9"/>
+                            </linearGradient>
+                            <linearGradient id="ug2" x1="34" y1="14" x2="70" y2="62" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#818cf8"/><stop offset="1" stop-color="#4f46e5"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <h2 class="upload-title">Drop your files here</h2>
+                <p class="upload-subtitle">or click to browse</p>
+                <div class="upload-formats">
+                    <span class="format-badge">PDF</span>
+                    <span class="format-badge">JPG</span>
+                    <span class="format-badge">PNG</span>
+                    <span class="format-badge">JPEG</span>
+                    <span class="format-badge">DOCX</span>
+                </div>
+                <input id="file-input" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" hidden>
+            </div>
+        </section>
+
+        <!-- ─── Pages Grid (shown when files present) ─── -->
+        <section id="pages-section" class="pages-section hidden">
+            <div class="pages-toolbar">
+                <p id="page-count" class="page-count">0 pages</p>
+                <p class="drag-hint">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>
+                    Drag to rearrange pages
+                </p>
+            </div>
+            <div id="pages-grid" class="pages-grid"></div>
+        </section>
+
+        <!-- Hidden file input for "Add more" -->
+        <input id="file-input-more" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" hidden>
+
+
+    </div>
+
+    <!-- ─── Processing overlay ─── -->
+    <div id="processing-overlay" class="processing-overlay hidden">
+        <div class="processing-card">
+            <div class="spinner"></div>
+            <p id="processing-text" class="processing-text">Processing files…</p>
         </div>
-        <button type="button" onclick="addPhoneRow()" class="text-xs text-indigo-400 font-bold mt-2.5 inline-flex items-center gap-1 hover:underline hover:text-indigo-300">
-          <span>+ Add Backup Number</span>
-        </button>
-      </div>
     </div>
 
-    <!-- Dynamic fields render container -->
-    <div id="dynamicFieldsContainer" class="space-y-4 mb-6"></div>
+    <!-- ─── Toast container ─── -->
+    <div id="toast-container" class="toast-container"></div>
 
-    <!-- Optional Remarks Notes -->
-    <div class="mb-6">
-      <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Remarks / Notes (Optional)</label>
-      <textarea id="formRemarks" rows="2" maxlength="1000" placeholder="Anything worth noting about this candidate or document..." class="input-premium w-full p-3 rounded-xl text-sm resize-y"></textarea>
-    </div>
+    <!-- ─── Editor Modal ─── -->
+    <div id="editor-modal" class="editor-modal hidden">
+        <div class="editor-container">
+            <header class="editor-header">
+                <div class="editor-title-group">
+                    <h2 class="editor-title">Edit Document Page</h2>
+                    <span id="editor-page-label" class="editor-page-label">document.pdf p.1</span>
+                </div>
+                <button id="editor-btn-close" class="editor-close-btn" title="Close editor">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </header>
 
-    <!-- Drag zone element -->
-    <div class="mb-6">
-      <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Select Document Asset (PDF Only, max 15MB)</label>
-      <input type="file" id="formFileInput" accept=".pdf,application/pdf" class="hidden" required>
-      
-      <div id="dropZone" class="upload-zone flex flex-col items-center justify-center gap-2" onclick="document.getElementById('formFileInput').click()">
-        <div class="text-3xl text-indigo-400 mb-1" id="uploadIcon">📄</div>
-        <div id="uploadPrompt" class="text-sm font-semibold text-gray-300">Drag & Drop PDF here or <span class="text-indigo-400">Browse</span></div>
-        <div id="fileHintText" class="text-xs text-gray-500">Maximum file size: 15MB</div>
-      </div>
-    </div>
+            <div class="editor-body">
+                <!-- Canvas Workspace (Left) -->
+                <div class="editor-workspace">
+                    <div id="editor-canvas-container" class="editor-canvas-container">
+                        <!-- Loaded page image or canvas will be injected here -->
+                        <div id="editor-overlays-layer" class="editor-overlays-layer"></div>
+                    </div>
+                </div>
 
-    <!-- Upload simulated progress bar overlay -->
-    <div id="uploadProgressWrapper" class="hidden space-y-2 mb-6">
-      <div class="flex justify-between text-xs font-bold text-indigo-400">
-        <span id="progressStatusText">Preparing file upload...</span>
-        <span id="progressPercent">0%</span>
-      </div>
-      <div class="progress-container">
-        <div id="progressBarFill" class="progress-fill"></div>
-      </div>
-    </div>
+                <!-- Sidebar Toolbar (Right) -->
+                <aside class="editor-sidebar">
+                    <div class="sidebar-section">
+                        <h3 class="sidebar-sec-title">Add Element</h3>
+                        <div class="add-buttons">
+                            <button id="editor-btn-add-text" class="btn btn-outline btn-full">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+                                Add Text
+                            </button>
+                            <button id="editor-btn-add-shape" class="btn btn-outline btn-full">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                                Add Block Overlay
+                            </button>
+                        </div>
+                    </div>
 
-    <!-- Form Submit Action -->
-    <button type="submit" id="submitBtn" class="w-full btn-premium-gradient py-3.5 rounded-xl transition shadow-lg text-base">
-      Execute Document Upload
-    </button>
-  </form>
-</div>
+                    <div id="editor-properties-panel" class="sidebar-section hidden">
+                        <h3 class="sidebar-sec-title">Properties</h3>
+                        
+                        <!-- Text Properties -->
+                        <div id="prop-text-group" class="prop-group">
+                            <label class="prop-label" for="prop-text-input">Text Content</label>
+                            <textarea id="prop-text-input" class="prop-textarea" rows="3" placeholder="Type text..."></textarea>
+                            
+                            <label class="prop-label" for="prop-font-family">Font Family</label>
+                            <select id="prop-font-family" class="prop-select">
+                                <option value="Helvetica">Helvetica (Sans-Serif)</option>
+                                <option value="TimesRoman">Times New Roman (Serif)</option>
+                                <option value="Courier">Courier (Monospace)</option>
+                            </select>
 
-<!-- Recruiter Submissions History Card -->
-<div id="recruiterHistoryCard" class="glass-card max-w-2xl mx-auto p-6 mt-6 hidden">
-  <h3 class="text-lg font-bold text-indigo-400 mb-3 border-b border-gray-800 pb-2.5 flex items-center justify-between">
-    <span>Your Uploaded Candidates</span>
-    <span id="historyCountBadge" class="text-xs bg-indigo-950 bg-opacity-40 text-indigo-300 px-2.5 py-1 rounded-full font-bold border border-indigo-900 border-opacity-30">0 Total</span>
-  </h3>
-  <div class="overflow-x-auto border border-white border-opacity-5 rounded-xl bg-black bg-opacity-25 max-h-60">
-    <table class="min-w-full text-xs text-left text-gray-400">
-      <thead class="bg-gray-900 text-gray-300 uppercase font-bold border-b border-gray-800">
-        <tr>
-          <th class="p-3">Candidate Name</th>
-          <th class="p-3">Passport Number</th>
-          <th class="p-3 text-right">Upload Date</th>
-        </tr>
-      </thead>
-      <tbody id="recruiterHistoryBody">
-      </tbody>
-    </table>
-  </div>
-</div>
+                            <label class="prop-label" for="prop-font-size">Font Size (<span id="prop-font-size-val">16</span>px)</label>
+                            <input id="prop-font-size" class="prop-slider" type="range" min="8" max="72" value="16">
 
-<script>
-  let projectCacheMemory = {};
-  let activeDynamicConfig = [];
-  const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; 
+                            <label class="prop-label">Color</label>
+                            <div class="color-swatches">
+                                <button class="color-swatch active" data-color="#000000" style="background:#000000; border:1px solid rgba(255,255,255,0.3);" title="Black"></button>
+                                <button class="color-swatch" data-color="#ffffff" style="background:#ffffff; border:1px solid rgba(0,0,0,0.3);" title="White"></button>
+                                <button class="color-swatch" data-color="#ef4444" style="background:#ef4444;" title="Red"></button>
+                                <button class="color-swatch" data-color="#2563eb" style="background:#2563eb;" title="Blue"></button>
+                                <button class="color-swatch" data-color="#16a34a" style="background:#16a34a;" title="Green"></button>
+                            </div>
+                        </div>
 
-  const countryCodes = [
-    { name: "Afghanistan (+93)", code: "93" },
-    { name: "Australia (+61)", code: "61" },
-    { name: "Bangladesh (+880)", code: "880" },
-    { name: "Canada (+1)", code: "1" },
-    { name: "China (+86)", code: "86" },
-    { name: "Germany (+49)", code: "49" },
-    { name: "India (+91)", code: "91", default: true },
-    { name: "Kuwait (+965)", code: "965" },
-    { name: "Malaysia (+60)", code: "60" },
-    { name: "Oman (+968)", code: "968" },
-    { name: "Pakistan (+92)", code: "92" },
-    { name: "Qatar (+974)", code: "974" },
-    { name: "Saudi Arabia (+966)", code: "966" },
-    { name: "Singapore (+65)", code: "65" },
-    { name: "UAE (+971)", code: "971" },
-    { name: "United Kingdom (+44)", code: "44" },
-    { name: "United States (+1)", code: "1" }
-  ];
+                        <!-- Shape/Redaction Properties -->
+                        <div id="prop-shape-group" class="prop-group hidden">
+                            <label class="prop-label" for="prop-shape-type">Type</label>
+                            <select id="prop-shape-type" class="prop-select">
+                                <option value="white">Whiteout (Cover-up)</option>
+                                <option value="black">Blackout (Redaction)</option>
+                                <option value="highlight">Yellow Highlight</option>
+                            </select>
+                        </div>
 
-  function populateCountryDropdown(selectElement) {
-    selectElement.innerHTML = '';
-    countryCodes.forEach(item => {
-      let opt = new Option(item.name, item.code);
-      if (item.default) opt.selected = true;
-      selectElement.add(opt);
-    });
-  }
+                        <button id="editor-btn-delete-el" class="btn btn-ghost btn-danger-ghost btn-full" style="margin-top: 20px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            Delete Element
+                        </button>
+                    </div>
 
-  function addPhoneRow() {
-    const container = document.getElementById('phoneInputsContainer');
-    const div = document.createElement('div');
-    div.className = "flex gap-2 phone-row items-center";
-    div.innerHTML = `
-      <select class="p-3 rounded-xl country-code-select bg-gray-900 border border-white border-opacity-10 text-xs text-white max-w-[130px]" required></select>
-      <input type="text" pattern="^[0-9]+$" oninput="this.value=this.value.replace(/[^0-9]/g,'')" class="input-premium flex-1 p-3 rounded-xl text-sm phone-digits" placeholder="Alternate No." required>
-      <button type="button" onclick="this.parentElement.remove()" class="text-red-400 font-bold px-2 text-lg hover:text-red-500 transition">✕</button>
-    `;
-    container.appendChild(div);
-    populateCountryDropdown(div.querySelector('.country-code-select'));
-  }
-
-  function initUserInterface() {
-    populateCountryDropdown(document.querySelector('.country-code-select'));
-
-    const pSel = document.getElementById('formProjectSelect');
-    const rSel = document.getElementById('formRecruiterSelect');
-
-    // Check if we have any backend connection at all
-    const hasApi = typeof APPS_SCRIPT_API_URL !== 'undefined' && APPS_SCRIPT_API_URL && APPS_SCRIPT_API_URL.trim();
-    const hasScriptRun = window.google && google.script && google.script.run;
-
-    if (!hasApi && !hasScriptRun) {
-      // No backend configured — show a friendly banner, don't throw an error
-      pSel.innerHTML = '<option value="">-- Connect backend first --</option>';
-      rSel.innerHTML = '<option value="">-- Connect backend first --</option>';
-
-      // Show a non-blocking info banner below the dropdowns
-      const existingBanner = document.getElementById('noBackendBanner');
-      if (!existingBanner) {
-        const banner = document.createElement('div');
-        banner.id = 'noBackendBanner';
-        banner.style.cssText = 'margin:16px 0;padding:14px 18px;border-radius:12px;background:rgba(99,102,241,0.07);border:1px solid rgba(99,102,241,0.2);display:flex;align-items:center;gap:12px;';
-        banner.innerHTML = `
-          <span style="font-size:1.4rem;">⚙️</span>
-          <div>
-            <div style="font-weight:700;font-size:0.85rem;color:#4f46e5;margin-bottom:2px;">Backend Not Connected</div>
-            <div style="font-size:0.75rem;color:#64748b;line-height:1.5;">
-              To load recruiter names and projects, click <strong>🔒 Manager Workspace</strong> and connect your Google Apps Script backend.
+                    <div id="editor-no-selection" class="editor-no-selection-hint">
+                        Select an element to edit properties
+                    </div>
+                </aside>
             </div>
-          </div>
-        `;
-        const formCard = pSel.closest('.glass-card') || pSel.parentElement;
-        if (formCard) formCard.insertBefore(banner, formCard.firstChild);
-      }
-      return;
-    }
 
-    // Loading indicator while fetching
-    pSel.innerHTML = '<option value="">Loading Projects...</option>';
-
-    function renderFormData(data) {
-      rSel.innerHTML = '<option value="">-- Choose Name --</option>';
-      pSel.innerHTML = '<option value="">-- Choose Project Track --</option>';
-
-      data.recruiters.forEach(r => rSel.add(new Option(r, r)));
-
-      projectCacheMemory = {};
-      data.projectsConfig.forEach(p => {
-        pSel.add(new Option(p.name, p.name));
-        projectCacheMemory[p.name] = p.fields;
-      });
-
-      if (data.projectsConfig.length === 0) {
-        pSel.innerHTML = '<option value="">-- No open projects available --</option>';
-      }
-
-      // Remove the no-backend banner if it was showing
-      const banner = document.getElementById('noBackendBanner');
-      if (banner) banner.remove();
-    }
-
-    // Check if we have cached data less than 5 minutes old
-    const cachedStr = sessionStorage.getItem('cachedFormInitData');
-    if (cachedStr) {
-      try {
-        const cache = JSON.parse(cachedStr);
-        if (Date.now() - cache.timestamp < 5 * 60 * 1000) {
-          renderFormData(cache.data);
-          return; // Use cache and skip fetch!
-        }
-      } catch(e) {}
-    }
-
-    google.script.run.withSuccessHandler(function(data) {
-      // Save to cache
-      sessionStorage.setItem('cachedFormInitData', JSON.stringify({ timestamp: Date.now(), data: data }));
-      renderFormData(data);
-    }).withFailureHandler(function(err) {
-      pSel.innerHTML = '<option value="">-- Load failed --</option>';
-      rSel.innerHTML = '<option value="">-- Load failed --</option>';
-      showAlertModal('Could not load form data: ' + (err && err.message ? err.message : String(err)) + '\n\nMake sure your Apps Script is deployed as a Web App with access set to "Anyone".', 'Load Error', 'error');
-    }).getFormInitializationData();
-  }
-
-  document.addEventListener("DOMContentLoaded", initUserInterface);
-
-  // Recruiter submissions history loader
-  document.getElementById('formRecruiterSelect').addEventListener('change', loadRecruiterSubmissionsHistory);
-  document.getElementById('formProjectSelect').addEventListener('change', loadRecruiterSubmissionsHistory);
-
-  function loadRecruiterSubmissionsHistory() {
-    const recruiter = document.getElementById('formRecruiterSelect').value;
-    const project = document.getElementById('formProjectSelect').value;
-    const card = document.getElementById('recruiterHistoryCard');
-    const tbody = document.getElementById('recruiterHistoryBody');
-    const countBadge = document.getElementById('historyCountBadge');
-
-    if (!recruiter || !project) {
-      card.classList.add('hidden');
-      tbody.innerHTML = '';
-      return;
-    }
-
-    card.classList.remove('hidden');
-    tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500 italic">Retrieving your submission history...</td></tr>';
-    countBadge.innerText = "Querying...";
-
-    google.script.run
-      .withSuccessHandler(function(history) {
-        tbody.innerHTML = '';
-        countBadge.innerText = `${history.length} Total`;
-
-        if (history.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500 italic">No candidates uploaded by you for this project yet.</td></tr>';
-          return;
-        }
-
-        history.forEach(item => {
-          const tr = document.createElement('tr');
-          tr.className = 'border-b border-gray-850 hover-highlight-row text-gray-300 font-medium';
-          
-          const dateStr = new Date(item.timestamp).toLocaleDateString(undefined, {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-          });
-
-          tr.innerHTML = `
-            <td class="p-3 font-bold text-gray-200">${escapeHtml_(item.candidateName)}</td>
-            <td class="p-3 text-gray-400 font-mono">${escapeHtml_(item.passportNumber)}</td>
-            <td class="p-3 text-right text-gray-500">${dateStr}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-      })
-      .withFailureHandler(function(err) {
-        tbody.innerHTML = `<tr><td colspan="3" class="p-4 text-center text-red-500">Error loading history: ${escapeHtml_(err.message)}</td></tr>`;
-        countBadge.innerText = "Error";
-      })
-      .getRecruiterSubmissionsHistory(project, recruiter);
-  }
-
-  function renderDynamicFieldsInstantly(projectName) {
-    const container = document.getElementById('dynamicFieldsContainer');
-    container.innerHTML = "";
-    activeDynamicConfig = [];
-
-    if (!projectName) return;
-
-    if (!projectCacheMemory[projectName]) {
-      container.innerHTML = `
-        <div class="skeleton-label"></div>
-        <div class="skeleton-field mb-4"></div>
-        <div class="skeleton-label"></div>
-        <div class="skeleton-field"></div>
-      `;
-      return;
-    }
-
-    const fields = projectCacheMemory[projectName];
-    activeDynamicConfig = fields;
-
-    if (fields.length > 0) {
-      const header = document.createElement('h3');
-      header.className = "text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3 mt-1";
-      header.innerText = "Project Specific Requirements";
-      container.appendChild(header);
-    }
-
-    fields.forEach(field => {
-      const div = document.createElement('div');
-      div.className = "mb-4";
-
-      const label = document.createElement('label');
-      label.className = "block text-xs font-semibold text-gray-400 mb-2";
-      label.innerText = field.label;
-      div.appendChild(label);
-
-      if (field.type === 'dropdown') {
-        const select = document.createElement('select');
-        select.id = "dyn_" + field.id;
-        select.className = "input-premium w-full p-3 rounded-xl text-sm bg-gray-900 border dynamic-field-input";
-        select.required = true;
-        select.add(new Option("-- Select --", ""));
-        field.options.forEach(opt => select.add(new Option(opt, opt)));
-        div.appendChild(select);
-      } else {
-        const input = document.createElement('input');
-        input.id = "dyn_" + field.id;
-        input.type = field.type; // Text, date, or number sets input type natively
-        input.className = "input-premium w-full p-3 rounded-xl text-sm bg-gray-900 border dynamic-field-input";
-        input.required = true;
-        div.appendChild(input);
-      }
-      container.appendChild(div);
-    });
-  }
-
-  function resetPhoneRows() {
-    document.getElementById('phoneInputsContainer').innerHTML = `
-      <div class="flex gap-2 phone-row">
-        <select class="p-3 rounded-xl country-code-select bg-gray-900 border border-white border-opacity-10 text-xs text-white max-w-[130px]" required></select>
-        <input type="text" pattern="^[0-9]+$" oninput="this.value=this.value.replace(/[^0-9]/g,'')" class="input-premium flex-1 p-3 rounded-xl text-sm phone-digits" placeholder="9876543210" required>
-      </div>`;
-    populateCountryDropdown(document.querySelector('.country-code-select'));
-  }
-
-  // drag-and-drop listeners
-  const fileInput = document.getElementById('formFileInput');
-  const dropZone = document.getElementById('dropZone');
-  const uploadIcon = document.getElementById('uploadIcon');
-  const uploadPrompt = document.getElementById('uploadPrompt');
-
-  ['dragenter', 'dragover'].forEach(eventName => {
-    dropZone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      dropZone.classList.add('dragover');
-    }, false);
-  });
-
-  ['dragleave', 'drop'].forEach(eventName => {
-    dropZone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('dragover');
-    }, false);
-  });
-
-  dropZone.addEventListener('drop', (e) => {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    if (files.length) {
-      fileInput.files = files;
-      handleFileSelected();
-    }
-  });
-
-  fileInput.addEventListener('change', handleFileSelected);
-
-  function handleFileSelected() {
-    const file = fileInput.files[0];
-    if (file) {
-      if (file.type !== 'application/pdf') {
-        showAlertModal('Only PDF documents are accepted.', 'Invalid File Type', 'error');
-        fileInput.value = '';
-        resetDropZone();
-        return;
-      }
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        showAlertModal('File size exceeds the 15MB limit.', 'File Too Large', 'error');
-        fileInput.value = '';
-        resetDropZone();
-        return;
-      }
-      
-      dropZone.classList.add('has-file');
-      uploadIcon.innerText = '✅';
-      uploadPrompt.innerHTML = `<span class="text-green-400 font-bold">${file.name}</span> (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
-      
-      const cancelLink = document.createElement('div');
-      cancelLink.id = "cancelUploadLink";
-      cancelLink.className = "text-xs text-red-400 font-semibold hover:underline mt-1 cursor-pointer";
-      cancelLink.innerText = "✕ Remove File";
-      cancelLink.onclick = (e) => {
-        e.stopPropagation();
-        fileInput.value = '';
-        resetDropZone();
-      };
-      
-      const oldLink = document.getElementById('cancelUploadLink');
-      if (oldLink) oldLink.remove();
-      dropZone.appendChild(cancelLink);
-    }
-  }
-
-  function resetDropZone() {
-    dropZone.classList.remove('has-file');
-    uploadIcon.innerText = '📄';
-    uploadPrompt.innerHTML = `Drag & Drop PDF here or <span class="text-indigo-400">Browse</span>`;
-    const oldLink = document.getElementById('cancelUploadLink');
-    if (oldLink) oldLink.remove();
-  }
-
-  async function processDocumentFormSubmit(e) {
-    e.preventDefault();
-
-    const submitBtn = document.getElementById('submitBtn');
-    const fileEl = fileInput.files[0];
-
-    if (!fileEl) {
-      await showAlertModal('Please select a PDF document to upload.', 'Missing Document', 'error');
-      return;
-    }
-
-    submitBtn.disabled = true;
-    submitBtn.innerText = "Processing Document...";
-    submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
-
-    const progressWrapper = document.getElementById('uploadProgressWrapper');
-    const progressBar = document.getElementById('progressBarFill');
-    const progressText = document.getElementById('progressStatusText');
-    const progressPercent = document.getElementById('progressPercent');
-
-    progressWrapper.classList.remove('hidden');
-    progressBar.style.width = '0%';
-    progressText.innerText = "Converting document to binary stream...";
-    progressPercent.innerText = "0%";
-
-    let uploadProgress = 0;
-    const progressInterval = setInterval(() => {
-      if (uploadProgress < 90) {
-        const step = uploadProgress < 40 ? 5 : (uploadProgress < 75 ? 2 : 0.5);
-        uploadProgress += step;
-        progressBar.style.width = `${Math.min(uploadProgress, 90)}%`;
-        progressPercent.innerText = `${Math.floor(Math.min(uploadProgress, 90))}%`;
-
-        if (uploadProgress > 45) {
-          progressText.innerText = "Uploading raw data packets to Drive...";
-        }
-        if (uploadProgress > 75) {
-          progressText.innerText = "Awaiting sheets index synchronization...";
-        }
-      }
-    }, 150);
-
-    const unlockSubmitButton = () => {
-      clearInterval(progressInterval);
-      progressBar.style.width = '100%';
-      progressPercent.innerText = '100%';
-      progressText.innerText = 'Upload sequence completed!';
-
-      setTimeout(() => {
-        progressWrapper.classList.add('hidden');
-        submitBtn.disabled = false;
-        submitBtn.innerText = "Execute Document Upload";
-        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-      }, 800);
-    };
-
-    const reader = new FileReader();
-    reader.onload = async function(event) {
-      const phoneNumbers = [];
-      document.querySelectorAll('.phone-row').forEach(row => {
-        const code = row.querySelector('.country-code-select').value;
-        const num = row.querySelector('.phone-digits').value;
-        if (num) phoneNumbers.push(`${code} ${num}`);
-      });
-
-      if (phoneNumbers.length === 0) {
-        await showAlertModal('Please provide at least one mobile contact number.', 'Missing Information', 'error');
-        unlockSubmitButton();
-        return;
-      }
-
-      const dynamicAnswers = {};
-      activeDynamicConfig.forEach(field => {
-        const el = document.getElementById("dyn_" + field.id);
-        dynamicAnswers[field.id] = el ? el.value : '';
-      });
-
-      const payload = {
-        recruiter: document.getElementById('formRecruiterSelect').value,
-        project: document.getElementById('formProjectSelect').value,
-        candidateName: document.getElementById('formCandidateName').value.trim(),
-        passportNumber: document.getElementById('formPassportNumber').value,
-        mobileNumber: phoneNumbers.join(', '),
-        remarks: document.getElementById('formRemarks').value.trim(),
-        dynamicAnswers: dynamicAnswers,
-        fileData: event.target.result
-      };
-
-      google.script.run
-        .withSuccessHandler(async function(response) {
-          unlockSubmitButton();
-          const isError = typeof response === 'string' && response.indexOf('Error') === 0;
-          await showAlertModal(response, isError ? 'Submission Failed' : 'Success', isError ? 'error' : 'success');
-          if (isError) return;
-          
-          document.getElementById('formCandidateName').value = "";
-          document.getElementById('formPassportNumber').value = "";
-          document.getElementById('formRemarks').value = "";
-          resetPhoneRows();
-          resetDropZone();
-          // Reload the recruiter history immediately to show the new submission!
-          loadRecruiterSubmissionsHistory();
-        })
-        .withFailureHandler(async function(error) {
-          unlockSubmitButton();
-          await showAlertModal('Upload failed: ' + error.message, 'Submission Failed', 'error');
-        })
-        .submitUserData(payload);
-    };
-
-    reader.onerror = async function() {
-      await showAlertModal('Could not read the selected file. Please try again.', 'File Error', 'error');
-      unlockSubmitButton();
-    };
-
-    reader.readAsDataURL(fileEl);
-  }
-</script>
-      </div>
-      <div id="adminView" class="hidden transition-all duration-300">
-        <style>
-  .admin-header-gradient {
-    background: linear-gradient(135deg, #c7d2fe 0%, #e9d5ff 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .premium-pill-active {
-    background: rgba(16, 185, 129, 0.1);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.2);
-  }
-
-  .premium-pill-paused {
-    background: rgba(245, 158, 11, 0.1);
-    color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.2);
-  }
-
-  .project-card {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    background: rgba(18, 22, 41, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-  }
-  .project-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(99, 102, 241, 0.4);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 15px rgba(99, 102, 241, 0.1);
-    background: rgba(18, 22, 41, 0.8);
-  }
-
-  .kpi-card {
-    background: rgba(255, 255, 255, 0.01);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    position: relative;
-    overflow: hidden;
-  }
-  .kpi-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 3px;
-    background: var(--accent-grad);
-  }
-
-  /* Progress Contribution Bar */
-  .bar-container {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 99px;
-    height: 6px;
-    overflow: hidden;
-  }
-  .bar-fill {
-    background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);
-    height: 100%;
-    border-radius: 99px;
-    transition: width 0.8s ease-in-out;
-  }
-</style>
-
-<div class="max-w-6xl mx-auto space-y-8">
-
-  <!-- Admin Panel Header Card -->
-  <div class="glass-card p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-    <div>
-      <h2 class="text-2xl font-black admin-header-gradient">Manager Dashboard Workspace</h2>
-      <p class="text-xs text-gray-400 mt-1">Manage recruiter permissions, build structures, and monitor documents</p>
-    </div>
-    <div class="flex gap-2.5 flex-wrap w-full md:w-auto">
-      <button onclick="openPerformanceMonitor()" class="btn-premium-secondary hover:text-indigo-300 flex-1 md:flex-initial py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
-        🏆 Leaderboard
-      </button>
-      <button onclick="executeGrantTeamAccess()" class="btn-premium-secondary hover:text-indigo-300 flex-1 md:flex-initial py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" title="Shares every project's Sheet + Drive folder as Editor with the configured team emails.">
-        👥 Grant Access
-      </button>
-      <button onclick="openApiSettingsModal()" class="btn-premium-secondary hover:text-indigo-300 flex-1 md:flex-initial py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1" title="Configure Apps Script Web App API Link">
-        ⚙️ Connection
-      </button>
-      <button onclick="openChangePasscodeForm()" class="btn-premium-secondary hover:text-indigo-300 flex-1 md:flex-initial py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
-        🔑 Passcode
-      </button>
-      <button onclick="openRecruiterForm()" class="btn-premium-secondary hover:text-indigo-300 flex-1 md:flex-initial py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
-        + Add Recruiter
-      </button>
-      <button onclick="revealCreateForm()" class="btn-premium-gradient flex-1 md:flex-initial py-2.5 px-5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
-        + Create Project
-      </button>
-    </div>
-  </div>
-
-  <!-- Monitored Projects Cards list -->
-  <div>
-    <div class="flex justify-between items-center mb-4 px-1">
-      <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Monitored Projects</h3>
-      <button onclick="loadProjectCardsGrid(false, true)" class="text-xs text-indigo-400 font-bold hover:underline inline-flex items-center gap-1">
-        <span>🔄 Refresh Cards</span>
-      </button>
-    </div>
-    
-    <div id="projectCardsDeckGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-      <div class="col-span-full py-12 text-center">
-        <p class="text-gray-500 italic text-sm">Loading project indexing cards...</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Project Analytics Workspace (Dynamic Dashboard) -->
-  <div id="projectAnalyticsWorkspace" class="hidden glass-card p-6 sm:p-8 space-y-6">
-    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center border-b border-gray-800 pb-5 gap-4">
-      <div>
-        <h3 id="dashProjectTitle" class="text-2xl font-black admin-header-gradient">Project Reference ID</h3>
-        <div class="flex flex-wrap gap-2 mt-3">
-          <a id="dashExternalSheetBtn" href="#" target="_blank" class="inline-flex items-center gap-1.5 bg-green-900 bg-opacity-20 hover:bg-opacity-35 text-green-400 font-semibold px-3.5 py-1.5 border border-green-800 border-opacity-30 rounded-xl text-xs transition">
-            📈 Open Google Sheet
-          </a>
-          <a id="dashExternalFolderBtn" href="#" target="_blank" class="inline-flex items-center gap-1.5 bg-blue-900 bg-opacity-20 hover:bg-opacity-35 text-blue-400 font-semibold px-3.5 py-1.5 border border-blue-800 border-opacity-30 rounded-xl text-xs transition">
-            📂 Drive Save Destination
-          </a>
+            <footer class="editor-footer">
+                <p class="editor-hint">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    Edits are automatically saved.
+                </p>
+                <button id="editor-btn-done" class="btn btn-primary">Done</button>
+            </footer>
         </div>
-      </div>
-
-      <div class="flex flex-wrap gap-2 w-full lg:w-auto">
-        <button id="toggleScopeBtn" onclick="switchMetricsDisplayScope()" class="btn-premium-gradient px-4 py-2.5 rounded-xl text-xs font-semibold flex-1 lg:flex-initial">
-          Switch View Mode
-        </button>
-        <button id="modifyProjectConfigBtn" class="btn-premium-secondary px-4 py-2.5 rounded-xl text-xs font-semibold flex-1 lg:flex-initial">
-          Modify Settings
-        </button>
-        <button id="repairHeadersBtn" class="btn-premium-secondary px-4 py-2.5 rounded-xl text-xs font-semibold flex-1 lg:flex-initial hover:text-amber-300" title="Re-syncs the sheet's column headers to match this project's current questions, without touching any existing data.">
-          🔧 Repair Headers
-        </button>
-        <button id="deleteProjectBtn" class="bg-red-950 bg-opacity-40 hover:bg-opacity-60 text-red-400 border border-red-900 px-4 py-2.5 rounded-xl text-xs font-semibold flex-1 lg:flex-initial transition shadow">
-          🗑️ Delete Project
-        </button>
-      </div>
     </div>
 
-    <!-- Analytics Dashboard KPIs -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-      <div class="p-5 rounded-2xl kpi-card flex flex-col justify-center">
-        <span id="kpiScopeLabel" class="text-xs text-indigo-400 font-semibold uppercase tracking-wider block">Cumulative Document Submissions Count</span>
-        <p id="kpiCountDisplay" class="text-4xl font-extrabold text-white mt-2">0</p>
-      </div>
-      <div class="p-5 rounded-2xl kpi-card flex flex-col justify-center">
-        <span class="text-xs text-indigo-400 font-semibold uppercase tracking-wider block">Context Scope Running State</span>
-        <p id="kpiScopeStatusText" class="text-lg font-bold text-gray-200 mt-2">Displaying Total Project Data</p>
-      </div>
-    </div>
-
-    <!-- Submissions Logs Grid with client-side filters -->
-    <div class="space-y-3">
-      <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-        <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Ecosystem Records Submissions Logs Grid</h4>
-        <div class="flex flex-wrap items-center gap-3 w-full xl:w-auto">
-          <!-- Start Date Filter -->
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-gray-500 uppercase font-bold">From:</span>
-            <input type="date" id="logFilterStartDate" onchange="filterLogsClientSide()" class="input-premium px-2.5 py-1.5 rounded-lg text-xs bg-gray-900 border text-white">
-          </div>
-          <!-- End Date Filter -->
-          <div class="flex items-center gap-2">
-            <span class="text-[10px] text-gray-500 uppercase font-bold">To:</span>
-            <input type="date" id="logFilterEndDate" onchange="filterLogsClientSide()" class="input-premium px-2.5 py-1.5 rounded-lg text-xs bg-gray-900 border text-white">
-          </div>
-          <!-- Text Search Filter -->
-          <input type="text" id="logSearchInput" oninput="filterLogsClientSide()" placeholder="🔍 Quick Filter Candidate, Recruiter..." class="input-premium px-3 py-1.5 rounded-lg text-xs flex-1 sm:flex-initial">
-        </div>
-      </div>
-      
-      <div class="overflow-x-auto border border-white border-opacity-5 rounded-xl max-h-80 bg-black bg-opacity-25">
-        <table class="min-w-full text-sm text-left text-gray-400 min-w-max border-collapse">
-          <thead id="dashLogsTableHeader" class="bg-gray-900 text-gray-300 uppercase z-40 border-b border-gray-800">
-          </thead>
-          <tbody id="dashLogsTableBody">
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- Create/Edit Project Modal Container -->
-  <div id="projectFormModalContainer" class="fixed inset-0 bg-black bg-opacity-80 hidden items-center justify-center p-4 overflow-y-auto" style="z-index: 9999;">
-    <div class="glass-card max-w-xl w-full p-6 my-8">
-      <h3 id="projectFormTitle" class="text-lg font-bold text-indigo-400 border-b border-gray-800 pb-3 mb-4">Create New Project Track</h3>
-      
-      <div class="text-[11px] text-amber-400 bg-amber-950 bg-opacity-40 border border-amber-900 border-opacity-30 rounded-xl p-3 mb-4">
-        💡 **Tip**: Once a project has submissions, avoid renaming existing questions. Renaming questions creates new columns in Google Sheets to protect previously collected data, rather than overwriting existing records.
-      </div>
-      
-      <form id="managerProjectForm" onsubmit="handleProjectFormSubmit(event)">
-        <input type="hidden" id="editProjectOriginalName" value="">
-        <input type="hidden" id="cachedSheetUrl" value="">
-        <input type="hidden" id="cachedFolderUrl" value="">
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1.5">Project Name</label>
-            <input type="text" id="projName" class="input-premium w-full p-2.5 rounded-xl text-sm" required placeholder="e.g. Europe_Waiters_2026">
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-xs font-semibold text-gray-400 mb-1.5">Submission</label>
-              <select id="projSubmission" class="p-2.5 rounded-xl bg-gray-900 border border-white border-opacity-10 text-xs text-white w-full">
-                <option value="Active">Active</option>
-                <option value="Paused">Paused</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-gray-400 mb-1.5">Status</label>
-              <select id="projStatus" class="p-2.5 rounded-xl bg-gray-900 border border-white border-opacity-10 text-xs text-white w-full">
-                <option value="Open">Open</option>
-                <option value="Completed">Completed</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div class="p-4 rounded-xl bg-black bg-opacity-20 border border-white border-opacity-5 mb-5">
-          <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">Configure Custom Fields</h4>
-          <div id="managerQuestionsContainer" class="space-y-2 mb-3"></div>
-          <button type="button" onclick="addCustomQuestionRow()" class="text-xs btn-premium-secondary px-3 py-2 rounded-lg font-medium inline-flex items-center gap-1">
-            <span>+ Add Custom Field</span>
-          </button>
-        </div>
-
-        <div class="flex justify-end gap-3 pt-3 border-t border-gray-800">
-          <button type="button" onclick="closeProjectFormModal()" class="btn-premium-secondary px-5 py-2.5 rounded-xl text-sm transition">Cancel</button>
-          <button type="submit" id="projectSubmitBtn" class="btn-premium-gradient px-6 py-2.5 rounded-xl text-sm transition">Deploy Track</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Performance Monitor Modal Container (Now acts as the Leaderboard) -->
-  <div id="performanceModalContainer" class="fixed inset-0 bg-black bg-opacity-80 hidden items-center justify-center p-4 overflow-y-auto" style="z-index: 9999;">
-    <div class="glass-card max-w-3xl w-full max-h-[90vh] flex flex-col">
-
-      <!-- Modal Header -->
-      <div class="flex justify-between items-center border-b border-gray-800 p-5 flex-shrink-0">
-        <h3 class="text-lg font-bold text-indigo-400">🏆 Recruiter Performance Leaderboard</h3>
-        <button onclick="closePerformanceMonitor()" class="text-gray-500 hover:text-white font-bold text-xl leading-none" title="Close">✕</button>
-      </div>
-
-      <!-- Modal Content Body -->
-      <div class="p-6 overflow-y-auto flex-1 min-h-0 space-y-5">
-        <div>
-          <label class="block text-xs font-semibold text-gray-400 mb-2">Select Project to Monitor</label>
-          <select id="perfProjectSelect" onchange="loadPerformanceTable(this.value)" class="p-2.5 rounded-xl bg-gray-900 border border-white border-opacity-10 text-xs text-white w-full">
-            <option value="">-- Choose a project --</option>
-          </select>
-        </div>
-
-        <!-- Leaderboard Capture Area -->
-        <div id="perfCaptureArea" class="bg-white p-5 rounded-2xl border text-gray-800">
-          <div class="flex justify-between items-start border-b pb-3 mb-4">
-            <div>
-              <h4 id="perfCaptureTitle" class="text-lg font-black text-gray-900">Leaderboard</h4>
-              <p id="perfCaptureSubtitle" class="text-xs text-gray-400 mt-0.5"></p>
-            </div>
-            <div class="text-right">
-              <span class="text-[10px] bg-indigo-55 text-indigo-700 font-bold px-2 py-1 rounded border border-indigo-100">Performance Index</span>
-            </div>
-          </div>
-          
-          <div class="overflow-x-auto">
-            <table class="min-w-full text-xs text-left text-gray-600 border-collapse">
-              <thead class="bg-gray-50 text-gray-800 uppercase font-extrabold border-b border-gray-200">
-                <tr>
-                  <th class="p-3">Rank</th>
-                  <th class="p-3">Recruiter Profile Name</th>
-                  <th class="p-3 text-right">Today</th>
-                  <th class="p-3 text-right">Yesterday</th>
-                  <th class="p-3 text-right">Total CVs</th>
-                  <th class="p-3 text-right">Activity Gauge</th>
-                </tr>
-              </thead>
-              <tbody id="perfTableBody">
-                <tr><td colspan="6" class="p-6 text-center text-gray-400 italic">Select a project tracking profile to view recruiter KPIs.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Modal Footer -->
-      <div class="flex justify-end gap-3 border-t border-gray-800 p-5 flex-shrink-0">
-        <button onclick="closePerformanceMonitor()" class="btn-premium-secondary px-5 py-2.5 rounded-xl text-sm transition">
-          Close
-        </button>
-        <button id="perfDownloadBtn" onclick="downloadPerformanceImage()" disabled class="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 rounded-xl text-sm transition shadow flex items-center gap-1.5">
-          <span>⬇️ Share Image (WhatsApp JPEG)</span>
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
-<script>
-  let projectInventoryCache = [];
-  let currentDashboardProjectName = null;
-  let currentActiveMetricsPayload = null;
-  let currentMetricDisplayScope = "total";
-
-  function handleAuthFailure_(error) {
-    forceReturnToUserView('Session error: ' + (error && error.message ? error.message : 'access denied.'));
-  }
-
-  function initManagerInterface() {
-    loadProjectCardsGrid(true);
-  }
-
-  function loadProjectCardsGrid(autoOpenTodaysActivity, forceRefresh) {
-    google.script.run
-      .withSuccessHandler(function(projects) {
-        projectInventoryCache = projects;
-        const deckGrid = document.getElementById('projectCardsDeckGrid');
-        deckGrid.innerHTML = '';
-
-        if (projects.length === 0) {
-          deckGrid.innerHTML = '<p class="text-gray-400 italic text-sm p-4 col-span-full">No active project structures found. Create a project to begin.</p>';
-          return;
-        }
-
-        projects.forEach(p => {
-          const escName = p.name.replace(/'/g, "\\'");
-          const card = document.createElement('div');
-          card.className = "project-card p-5 rounded-2xl cursor-pointer shadow-md";
-          card.setAttribute("onclick", `loadProjectDashboardWorkspace('${escName}')`);
-
-          const subBadge = p.submission === 'Active'
-            ? '<span class="premium-pill-active text-[10px] px-2 py-0.5 rounded-lg font-bold">Active</span>'
-            : '<span class="premium-pill-paused text-[10px] px-2 py-0.5 rounded-lg font-bold">Paused</span>';
-
-          const statusBadge = p.status === 'Completed'
-            ? '<span class="text-[10px] bg-gray-200 text-gray-700 px-2 py-0.5 rounded-lg font-bold border border-gray-300">Completed</span>'
-            : '<span class="text-[10px] bg-indigo-950 bg-opacity-40 text-indigo-400 px-2 py-0.5 rounded-lg font-bold border border-indigo-900 border-opacity-30">Open</span>';
-
-          let todayBadge = '';
-          if (p.status === 'Open') {
-            todayBadge = p.todaySubmissions > 0
-              ? `<span class="text-[10px] bg-red-950 bg-opacity-40 text-red-400 px-2.5 py-1 rounded-full font-bold border border-red-900 border-opacity-30 inline-flex items-center gap-1">📥 ${p.todaySubmissions} today</span>`
-              : `<span class="text-[10px] bg-gray-200 text-gray-700 px-2.5 py-1 rounded-full font-semibold border border-gray-300 inline-flex items-center">0 today</span>`;
-          }
-          if (p.dataUnreachable) {
-            todayBadge += ' <span class="text-[10px] text-red-400 font-bold ml-1" title="Could not access external sheet">⚠ Unreachable</span>';
-          }
-
-          card.innerHTML = `
-            <div class="flex justify-between items-center mb-3">
-              <h4 class="font-extrabold text-gray-200 text-base truncate pr-2">${p.name}</h4>
-              <div class="flex gap-1 flex-shrink-0">${subBadge}</div>
-            </div>
-            <p class="text-xs text-gray-400 truncate mb-3">Fields Count: ${p.fields.length} dynamic tags</p>
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <div>${todayBadge}</div>
-              <button onclick="duplicateProject('${escName}', event)" title="Duplicate structure to a new project" class="text-xs text-indigo-400 font-bold hover:underline hover:text-indigo-300 flex-shrink-0">⧉ Duplicate</button>
-            </div>
-            <div class="mt-4 pt-3 border-t border-gray-800 border-opacity-50 flex justify-between items-center text-xs font-bold text-indigo-400">
-              <span class="hover:underline">Monitor Workspace →</span>
-              ${statusBadge}
-            </div>
-          `;
-          deckGrid.appendChild(card);
-        });
-
-        if (autoOpenTodaysActivity) {
-          const busiestOpenProject = projects
-            .filter(p => p.status === 'Open' && p.todaySubmissions > 0)
-            .sort((a, b) => b.todaySubmissions - a.todaySubmissions)[0];
-          if (busiestOpenProject) {
-            loadProjectDashboardWorkspace(busiestOpenProject.name);
-          }
-        }
-      })
-      .withFailureHandler(handleAuthFailure_)
-      .getExtendedProjectsList(MANAGER_PASSCODE, !!forceRefresh);
-  }
-
-  async function executeGrantTeamAccess() {
-    const ok = await showConfirmModal("Share every project's Google Sheet and Drive folder as Editor with the configured team emails?\n\nThis affects ALL existing projects.", 'Grant Team Access');
-    if (!ok) return;
-
-    google.script.run
-      .withSuccessHandler(function(res) { showAlertModal(res, 'Team Access', res.indexOf('Error') === 0 ? 'error' : 'success'); })
-      .withFailureHandler(handleAuthFailure_)
-      .managerGrantTeamAccessToAllProjects(MANAGER_PASSCODE);
-  }
-
-  function loadProjectDashboardWorkspace(projectName) {
-    const workspace = document.getElementById('projectAnalyticsWorkspace');
-    workspace.classList.remove('hidden');
-    document.getElementById('dashProjectTitle').innerText = projectName;
-
-    document.getElementById('deleteProjectBtn').setAttribute("onclick", `executeDeleteProject('${projectName.replace(/'/g, "\\'")}')`);
-    document.getElementById('repairHeadersBtn').setAttribute("onclick", `executeRepairHeaders('${projectName.replace(/'/g, "\\'")}')`);
-
-    currentDashboardProjectName = projectName;
-
-    google.script.run
-      .withSuccessHandler(function(metrics) {
-        if (!metrics || metrics.error) {
-          document.getElementById('kpiCountDisplay').innerText = "N/A";
-          document.getElementById('kpiScopeStatusText').innerText = "Broken/Missing Data Source Spreadsheet Target Link";
-          document.getElementById('dashExternalSheetBtn').removeAttribute('href');
-          document.getElementById('dashExternalFolderBtn').removeAttribute('href');
-          document.getElementById('dashLogsTableHeader').innerHTML = "<tr><th class='p-3 text-left text-red-500'>Error Condition Logs</th></tr>";
-          const detail = metrics ? metrics.error : 'The server call returned no data.';
-          document.getElementById('dashLogsTableBody').innerHTML = `<tr><td class='p-3 text-gray-400'>The connected data sheet could not be read. Error detail: ${detail}</td></tr>`;
-          return;
-        }
-
-        currentActiveMetricsPayload = metrics;
-        currentMetricDisplayScope = "total";
-
-        document.getElementById('dashExternalSheetBtn').href = metrics.sheetUrl;
-        document.getElementById('dashExternalFolderBtn').href = metrics.folderUrl;
-
-        renderActiveDashboardWorkspace();
-        document.getElementById('modifyProjectConfigBtn').setAttribute("onclick", `populateProjectForEdit('${projectName.replace(/'/g, "\\'")}')`);
-        workspace.scrollIntoView({ behavior: 'smooth' });
-      })
-      .withFailureHandler(handleAuthFailure_)
-      .getProjectDashboardMetrics(projectName, MANAGER_PASSCODE);
-  }
-
-  async function executeDeleteProject(projectName) {
-    const ok = await showConfirmModal(`Are you sure you want to completely delete "${projectName}" from the workspace?\n\nThis will remove it from all recruiter options and delete it from your dashboard index. The Google Sheet and Drive folder themselves will NOT be deleted.`, '⚠️ Delete Project');
-    if (!ok) return;
-
-    google.script.run
-      .withSuccessHandler(async function(response) {
-        if (response === "Success") {
-          await showAlertModal('Project removed from the tracking dashboard successfully!', 'Deleted', 'success');
-          document.getElementById('projectAnalyticsWorkspace').classList.add('hidden');
-          loadProjectCardsGrid();
-        } else {
-          showAlertModal(response, 'Delete Failed', 'error');
-        }
-      })
-      .withFailureHandler(handleAuthFailure_)
-      .managerDeleteProject(projectName, MANAGER_PASSCODE);
-  }
-
-  async function executeRepairHeaders(projectName) {
-    const ok = await showConfirmModal(`Re-sync the column headers for "${projectName}" to match its current questions?\n\nExisting data rows are never touched — this only fixes the header row.`, 'Repair Headers');
-    if (!ok) return;
-
-    google.script.run
-      .withSuccessHandler(async function(response) {
-        await showAlertModal(response, 'Repair Headers', response.indexOf('Repair Failed') === 0 ? 'error' : 'success');
-        loadProjectDashboardWorkspace(projectName);
-      })
-      .withFailureHandler(handleAuthFailure_)
-      .managerRepairProjectHeaders(projectName, MANAGER_PASSCODE);
-  }
-
-  function renderActiveDashboardWorkspace() {
-    if (!currentActiveMetricsPayload) return;
-
-    const m = currentActiveMetricsPayload;
-    const scopeBtn = document.getElementById('toggleScopeBtn');
-    const labelKPI = document.getElementById('kpiScopeLabel');
-    const countKPI = document.getElementById('kpiCountDisplay');
-    const statusTextKPI = document.getElementById('kpiScopeStatusText');
-    const logsHeader = document.getElementById('dashLogsTableHeader');
-    const logsBody = document.getElementById('dashLogsTableBody');
-
-    // Reset filters
-    document.getElementById('logSearchInput').value = "";
-    document.getElementById('logFilterStartDate').value = "";
-    document.getElementById('logFilterEndDate').value = "";
-
-    if (currentMetricDisplayScope === 'total') {
-      scopeBtn.innerText = "Switch View to: Today's Metrics Count";
-      labelKPI.innerText = "Cumulative Document Submissions Count";
-      countKPI.innerText = m.total;
-      statusTextKPI.innerText = "Displaying All-Time Project Metrics Data";
-    } else {
-      scopeBtn.innerText = "Switch View to: Cumulative Total Count";
-      labelKPI.innerText = "Today's Document Submissions Count";
-      countKPI.innerText = m.today;
-      statusTextKPI.innerText = "Displaying Today's Interactive Metrics Data Only";
-    }
-
-    // Build Table Header (Extra column for Actions: Open & Delete)
-    let hHtml = "<tr>";
-    m.headers.forEach((h, idx) => { 
-      const stickyClass = (idx === 2) ? ' left-0 z-50 ' : ' z-40 ';
-      hHtml += `<th class="p-3 text-gray-200 font-bold border-b border-gray-800 sticky top-0 theme-bg-adapt ${stickyClass}">${escapeHtml_(h)}</th>`; 
-    });
-    // Add extra column header for actions
-    hHtml += `<th class="p-3 text-right text-gray-200 font-bold border-b border-gray-800 sticky top-0 theme-bg-adapt z-40">Actions</th>`;
-    logsHeader.innerHTML = hHtml + "</tr>";
-
-    // Filter logs initially by scope
-    logsBody.innerHTML = '';
-    let rowsToRender = m.allLogs;
-
-    if (currentMetricDisplayScope === 'today') {
-      const todayMs = new Date().setHours(0, 0, 0, 0);
-      rowsToRender = m.allLogs.filter(log => {
-        const d = new Date(log.timestamp);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime() === todayMs;
-      });
-    }
-
-    if (rowsToRender.length === 0) {
-      logsBody.innerHTML = `<tr><td colspan="${m.headers.length + 1}" class="p-5 text-center text-gray-500 italic">No historical timeline data records match this snapshot scope.</td></tr>`;
-      return;
-    }
-
-    // Render table rows
-    rowsToRender.forEach((log) => {
-      const tr = document.createElement('tr');
-      tr.className = 'border-b border-gray-800 hover-highlight-row text-gray-300 log-row';
-      tr.setAttribute('data-search-content', log.allCells.join(' ').toLowerCase());
-      tr.setAttribute('data-timestamp', log.timestamp || log.allCells[0]);
-      
-      let docUrl = '';
-      log.allCells.forEach((cell, idx) => {
-        const td = document.createElement('td');
-        td.className = "p-3 truncate max-w-[200px]";
-        
-        if (idx === 0 && cell) {
-          td.className = "p-3 text-gray-500 font-normal";
-          td.textContent = new Date(cell).toLocaleString();
-        } else if (idx === 2) {
-          td.className = "p-3 font-bold sticky left-0 z-10 theme-bg-adapt truncate max-w-[200px]";
-          td.textContent = cell;
-        } else if (idx === log.allCells.length - 1 && typeof cell === 'string' && cell.indexOf('http') === 0) {
-          // Document URL cell - save it for the action column
-          docUrl = cell;
-          td.className = "p-3 text-indigo-400 font-bold truncate max-w-[200px]";
-          td.textContent = "Uploaded Asset File";
-        } else {
-          td.className = "p-3 font-bold truncate max-w-[200px]";
-          td.textContent = cell;
-        }
-        tr.appendChild(td);
-      });
-
-      // Actions Column (Open Document & Delete Submission Record)
-      const actionTd = document.createElement('td');
-      actionTd.className = "p-3 text-right flex items-center justify-end gap-3.5";
-      
-      if (docUrl) {
-        const openLink = document.createElement('a');
-        openLink.href = docUrl;
-        openLink.target = '_blank';
-        openLink.className = "text-indigo-400 font-extrabold hover:underline";
-        openLink.textContent = "Open 🔗";
-        actionTd.appendChild(openLink);
-      }
-
-      const deleteBtn = document.createElement('button');
-      deleteBtn.className = "text-red-400 hover:text-red-500 font-extrabold transition";
-      deleteBtn.innerHTML = "🗑️ Delete";
-      // Pass candidateName (index 2) and passport (index 3) and fileUrl (docUrl)
-      const candidateName = log.candidateName || log.allCells[2] || '';
-      const passport = log.passport || log.allCells[3] || '';
-      deleteBtn.setAttribute("onclick", `executeDeleteSubmission('${candidateName.replace(/'/g, "\\'")}', '${passport.replace(/'/g, "\\'")}', '${docUrl.replace(/'/g, "\\'")}')`);
-      actionTd.appendChild(deleteBtn);
-
-      tr.appendChild(actionTd);
-      logsBody.appendChild(tr);
-    });
-  }
-
-  // Manager action function to delete a submission record
-  async function executeDeleteSubmission(candidateName, passport, fileUrl) {
-    const ok = await showConfirmModal(
-      `Are you sure you want to permanently delete the submission for candidate "${candidateName}" (Passport: ${passport})?\n\nThis will remove their row from the Google Sheet and move their uploaded PDF in Google Drive to the Trash.`, 
-      '⚠️ Delete Submission Record'
-    );
-    if (!ok) return;
-
-    google.script.run
-      .withSuccessHandler(async function(res) {
-        await showAlertModal(res, 'Delete Submission', res.indexOf('Error') === 0 ? 'error' : 'success');
-        if (res.indexOf('Error') !== 0) {
-          // Reload project dashboard workspace to sync logs
-          loadProjectDashboardWorkspace(currentDashboardProjectName);
-        }
-      })
-      .withFailureHandler(handleAuthFailure_)
-      .managerDeleteSubmissionRecord(currentDashboardProjectName, candidateName, passport, fileUrl, MANAGER_PASSCODE);
-  }
-
-  // Client-side logs filter
-  function filterLogsClientSide() {
-    const filterText = document.getElementById('logSearchInput').value.toLowerCase().trim();
-    const startDateVal = document.getElementById('logFilterStartDate').value; 
-    const endDateVal = document.getElementById('logFilterEndDate').value; 
-    const rows = document.querySelectorAll('#dashLogsTableBody .log-row');
-    let visibleCount = 0;
-
-    const startMs = startDateVal ? new Date(startDateVal).setHours(0,0,0,0) : null;
-    const endMs = endDateVal ? new Date(endDateVal).setHours(23,59,59,999) : null;
-
-    rows.forEach(row => {
-      const searchContent = row.getAttribute('data-search-content');
-      const timestampStr = row.getAttribute('data-timestamp');
-      const logTimeMs = timestampStr ? new Date(timestampStr).getTime() : null;
-
-      let matchText = !filterText || searchContent.indexOf(filterText) !== -1;
-      let matchDate = true;
-
-      if (logTimeMs) {
-        if (startMs && logTimeMs < startMs) matchDate = false;
-        if (endMs && logTimeMs > endMs) matchDate = false;
-      }
-
-      if (matchText && matchDate) {
-        row.style.display = '';
-        visibleCount++;
-      } else {
-        row.style.display = 'none';
-      }
-    });
-
-    const oldEmptyRow = document.getElementById('logsTableSearchEmptyRow');
-    if (oldEmptyRow) oldEmptyRow.remove();
-
-    if (visibleCount === 0 && rows.length > 0) {
-      const logsBody = document.getElementById('dashLogsTableBody');
-      const tr = document.createElement('tr');
-      tr.id = 'logsTableSearchEmptyRow';
-      tr.innerHTML = `<td colspan="20" class="p-6 text-center text-gray-500 italic">No records match the filter criteria</td>`;
-      logsBody.appendChild(tr);
-    }
-  }
-
-  function switchMetricsDisplayScope() {
-    currentMetricDisplayScope = currentMetricDisplayScope === "total" ? "today" : "total";
-    renderActiveDashboardWorkspace();
-  }
-
-  function openPerformanceMonitor() {
-    const sel = document.getElementById('perfProjectSelect');
-    sel.innerHTML = '<option value="">-- Choose a project --</option>';
-    projectInventoryCache
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .forEach(p => sel.add(new Option(p.name, p.name)));
-
-    document.getElementById('perfTableBody').innerHTML = '<tr><td colspan="6" class="p-6 text-center text-gray-400 italic">Select a project tracking profile to view recruiter KPIs.</td></tr>';
-    document.getElementById('perfCaptureTitle').textContent = 'Performance Leaderboard';
-    document.getElementById('perfCaptureSubtitle').textContent = '';
-    document.getElementById('perfDownloadBtn').disabled = true;
-
-    const modal = document.getElementById('performanceModalContainer');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-    lockOverlayToViewport_(modal);
-  }
-
-  function closePerformanceMonitor() {
-    const modal = document.getElementById('performanceModalContainer');
-    modal.classList.remove('flex');
-    modal.classList.add('hidden');
-    unlockOverlayFromViewport_(modal);
-  }
-
-  function loadPerformanceTable(projectName) {
-    const tbody = document.getElementById('perfTableBody');
-    const titleEl = document.getElementById('perfCaptureTitle');
-    const subtitleEl = document.getElementById('perfCaptureSubtitle');
-    const downloadBtn = document.getElementById('perfDownloadBtn');
-
-    downloadBtn.disabled = true;
-
-    if (!projectName) {
-      tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-400 italic">Select a project tracking profile to view recruiter KPIs.</td></tr>';
-      titleEl.textContent = 'Performance Leaderboard';
-      subtitleEl.textContent = '';
-      return;
-    }
-
-    titleEl.textContent = `Leaderboard — ${projectName}`;
-    subtitleEl.textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-gray-400 italic">Computing recruiter metrics...</td></tr>';
-
-    google.script.run
-      .withSuccessHandler(function(data) {
-        if (!data || data.error) {
-          tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">${escapeHtml_(data ? data.error : 'Could not load performance data.')}</td></tr>`;
-          return;
-        }
-        if (data.rows.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-400 italic">No recruiters found.</td></tr>';
-          return;
-        }
-        tbody.innerHTML = '';
-        
-        // Sort rows by total submissions descending
-        const sortedRows = data.rows.slice().sort((a, b) => b.total - a.total);
-        const maxTotal = Math.max(...sortedRows.map(r => r.total), 1);
-
-        sortedRows.forEach((r, index) => {
-          const rank = index + 1;
-          let medal = rank.toString();
-          if (rank === 1) medal = '🥇';
-          else if (rank === 2) medal = '🥈';
-          else if (rank === 3) medal = '🥉';
-
-          const ratio = Math.min((r.total / maxTotal) * 100, 100);
-
-          const tr = document.createElement('tr');
-          tr.className = 'border-b border-gray-100 hover:bg-gray-50' + (index === 0 && r.today > 0 ? ' bg-yellow-50 font-semibold' : '');
-
-          tr.innerHTML = `
-            <td class="p-3 font-bold text-center text-sm w-12">${medal}</td>
-            <td class="p-3 font-bold text-gray-800">${escapeHtml_(r.name)}</td>
-            <td class="p-3 text-right text-indigo-600 font-extrabold">${r.today}</td>
-            <td class="p-3 text-right text-gray-500 font-medium">${r.yesterday}</td>
-            <td class="p-3 text-right text-gray-900 font-black">${r.total}</td>
-            <td class="p-3">
-              <div class="bar-container w-28 ml-auto" style="background: rgba(0,0,0,0.05); height: 6px;">
-                <div class="bar-fill" style="width: ${ratio}%; height: 100%; background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);"></div>
-              </div>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-        downloadBtn.disabled = false;
-      })
-      .withFailureHandler(handleAuthFailure_)
-      .getRecruiterPerformanceForProject(projectName, MANAGER_PASSCODE);
-  }
-
-  async function downloadPerformanceImage() {
-    const target = document.getElementById('perfCaptureArea');
-    const btn = document.getElementById('perfDownloadBtn');
-
-    if (typeof html2canvas === 'undefined') {
-      await showAlertModal('The image export library failed to load. Check your internet connection and try again.', 'Download Failed', 'error');
-      return;
-    }
-
-    const originalLabel = btn.innerText;
-    btn.disabled = true;
-    btn.innerText = 'Preparing image...';
-
-    try {
-      const canvas = await html2canvas(target, { backgroundColor: '#ffffff', scale: 2 });
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-
-      const projectName = document.getElementById('perfProjectSelect').value || 'performance';
-      const safeName = projectName.replace(/[^a-z0-9]+/gi, '_');
-      const dateStamp = new Date().toISOString().slice(0, 10);
-
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = `Performance_${safeName}_${dateStamp}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (e) {
-      await showAlertModal('Could not generate the image: ' + e.message, 'Download Failed', 'error');
-    } finally {
-      btn.disabled = false;
-      btn.innerText = originalLabel;
-    }
-  }
-
-  function openProjectFormModal() {
-    const modal = document.getElementById('projectFormModalContainer');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-    lockOverlayToViewport_(modal);
-  }
-
-  function showChangePasscodeModal() {
-    return new Promise(resolve => {
-      showAppModal(`
-        <h3 class="text-lg font-bold text-indigo-400 border-b border-gray-800 pb-3 mb-4">🔑 Change Manager Passcode</h3>
-        <div class="space-y-4 mb-6">
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1.5">Current Manager Passcode</label>
-            <input id="modalOldPass" type="password" autocomplete="new-password" class="input-premium w-full p-2.5 rounded-xl text-sm" placeholder="••••••••">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1.5">New Passcode (Min. 4 characters)</label>
-            <input id="modalNewPass" type="password" autocomplete="new-password" class="input-premium w-full p-2.5 rounded-xl text-sm" placeholder="••••••••">
-          </div>
-        </div>
-        <div class="flex justify-end gap-3 pt-3 border-t border-gray-800">
-          <button id="appModalCancelBtn" class="btn-premium-secondary px-5 py-2.5 rounded-xl text-sm transition">Cancel</button>
-          <button id="appModalSubmitBtn" class="btn-premium-gradient px-6 py-2.5 rounded-xl text-sm transition">Update Passcode</button>
-        </div>
-      `);
-      document.getElementById('modalOldPass').focus();
-      const submit = () => {
-        const oldPass = document.getElementById('modalOldPass').value;
-        const newPass = document.getElementById('modalNewPass').value;
-        closeAppModal();
-        resolve({ oldPass, newPass });
-      };
-      document.getElementById('appModalSubmitBtn').onclick = submit;
-      document.getElementById('appModalCancelBtn').onclick = () => { closeAppModal(); resolve(null); };
-    });
-  }
-
-  async function openChangePasscodeForm() {
-    const result = await showChangePasscodeModal();
-    if (!result || !result.oldPass || !result.newPass) return;
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        showAlertModal(res, 'Change Passcode', res.indexOf('Error') === 0 ? 'error' : 'success');
-        if (res.indexOf('Error') !== 0) MANAGER_PASSCODE = result.newPass;
-      })
-      .withFailureHandler(handleAuthFailure_)
-      .managerChangePasscode(result.oldPass, result.newPass);
-  }
-
-  function closeProjectFormModal() {
-    const modal = document.getElementById('projectFormModalContainer');
-    modal.classList.remove('flex');
-    modal.classList.add('hidden');
-    unlockOverlayFromViewport_(modal);
-  }
-
-  function revealCreateForm() {
-    resetProjectForm();
-    openProjectFormModal();
-  }
-
-  function duplicateProject(projectName, evt) {
-    if (evt) evt.stopPropagation(); 
-
-    const proj = projectInventoryCache.find(p => p.name === projectName);
-    if (!proj) return;
-
-    resetProjectForm();
-    document.getElementById('projectFormTitle').innerText = `Duplicate "${proj.name}" → New Project`;
-    document.getElementById('projSubmission').value = proj.submission;
-    document.getElementById('projStatus').value = 'Open';
-
-    const container = document.getElementById('managerQuestionsContainer');
-    container.innerHTML = '';
-    proj.fields.forEach(f => {
-      const opts = f.options ? f.options.join(', ') : '';
-      addCustomQuestionRow(f.label, f.type, opts);
-    });
-
-    openProjectFormModal();
-    document.getElementById('projName').focus();
-  }
-
-  async function openRecruiterForm() {
-    const name = await showPromptModal('Enter the recruiter\'s full name.', { title: 'Add Recruiter', placeholder: 'e.g. Priya Nair' });
-    if (!name || !name.trim()) return;
-    google.script.run
-      .withSuccessHandler(function(res) { showAlertModal(res, 'Add Recruiter', res.indexOf('Error') === 0 ? 'error' : 'success'); })
-      .withFailureHandler(handleAuthFailure_)
-      .managerCreateRecruiter(name.trim(), MANAGER_PASSCODE);
-  }
-
-  function addCustomQuestionRow(label = '', type = 'text', optionsStr = '') {
-    const container = document.getElementById('managerQuestionsContainer');
-    const div = document.createElement('div');
-    div.className = "flex gap-2 items-center bg-gray-900 border border-white border-opacity-5 p-2 rounded-xl custom-q-row";
-    div.innerHTML = `
-      <input type="text" class="flex-1 p-2 rounded-lg bg-black bg-opacity-25 border border-white border-opacity-10 text-xs text-white q-label" placeholder="Question Label" value="${label}" required>
-      <select class="p-2 rounded-lg bg-black bg-opacity-25 border border-white border-opacity-10 text-xs text-white q-type" onchange="toggleOptionsInput(this)">
-        <option value="text" ${type === 'text' ? 'selected' : ''}>Text Input</option>
-        <option value="number" ${type === 'number' ? 'selected' : ''}>Number Input</option>
-        <option value="dropdown" ${type === 'dropdown' ? 'selected' : ''}>Dropdown Menu</option>
-        <option value="date" ${type === 'date' ? 'selected' : ''}>Date Picker</option>
-      </select>
-      <input type="text" class="flex-1 p-2 rounded-lg bg-black bg-opacity-25 border border-white border-opacity-10 text-xs text-white q-options ${type === 'dropdown' ? '' : 'hidden'}" placeholder="Options (comma separated)" value="${optionsStr}">
-      <button type="button" onclick="this.parentElement.remove()" class="text-red-400 font-bold px-2 text-base hover:text-red-500 transition">✕</button>
-    `;
-    container.appendChild(div);
-  }
-
-  function toggleOptionsInput(selectEl) {
-    const optionsInput = selectEl.parentElement.querySelector('.q-options');
-    if (selectEl.value === 'dropdown') {
-      optionsInput.classList.remove('hidden');
-      optionsInput.required = true;
-    } else {
-      optionsInput.classList.add('hidden');
-      optionsInput.required = false;
-    }
-  }
-
-  function populateProjectForEdit(name) {
-    const proj = projectInventoryCache.find(p => p.name === name);
-    if (!proj) return;
-
-    document.getElementById('projectFormTitle').innerText = `Modify Project Settings: ${proj.name}`;
-    document.getElementById('editProjectOriginalName').value = proj.name;
-    document.getElementById('projName').value = proj.name;
-    document.getElementById('cachedSheetUrl').value = proj.sheetUrl;
-    document.getElementById('cachedFolderUrl').value = proj.folderUrl;
-    document.getElementById('projSubmission').value = proj.submission;
-    document.getElementById('projStatus').value = proj.status;
-
-    const container = document.getElementById('managerQuestionsContainer');
-    container.innerHTML = '';
-
-    proj.fields.forEach(f => {
-      const opts = f.options ? f.options.join(', ') : '';
-      addCustomQuestionRow(f.label, f.type, opts);
-    });
-
-    document.getElementById('projectSubmitBtn').innerText = "Save Configurations";
-    openProjectFormModal();
-  }
-
-  function resetProjectForm() {
-    document.getElementById('projectFormTitle').innerText = "Create New Project Track";
-    document.getElementById('managerProjectForm').reset();
-    document.getElementById('editProjectOriginalName').value = "";
-    document.getElementById('cachedSheetUrl').value = "";
-    document.getElementById('cachedFolderUrl').value = "";
-    document.getElementById('managerQuestionsContainer').innerHTML = "";
-    document.getElementById('projectSubmitBtn').innerText = "Deploy Project Track";
-  }
-
-  function handleProjectFormSubmit(e) {
-    e.preventDefault();
-
-    const fieldsArray = [];
-    const seenIds = new Set();
-    document.querySelectorAll('.custom-q-row').forEach(row => {
-      const label = row.querySelector('.q-label').value.trim();
-      const type = row.querySelector('.q-type').value;
-      const optsVal = row.querySelector('.q-options').value;
-      const options = type === 'dropdown' ? optsVal.split(',').map(s => s.trim()).filter(Boolean) : [];
-      let id = label.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      
-      let uniqueId = id || 'field';
-      let n = 1;
-      while (seenIds.has(uniqueId)) { uniqueId = id + '_' + (++n); }
-      seenIds.add(uniqueId);
-      fieldsArray.push({ id: uniqueId, label: label, type: type, options: options });
-    });
-
-    const originalName = document.getElementById('editProjectOriginalName').value;
-    const payload = {
-      originalName: originalName,
-      name: document.getElementById('projName').value.trim(),
-      sheetUrl: document.getElementById('cachedSheetUrl').value,
-      folderUrl: document.getElementById('cachedFolderUrl').value,
-      submission: document.getElementById('projSubmission').value,
-      status: document.getElementById('projStatus').value,
-      fields: fieldsArray
-    };
-
-    const submitBtn = document.getElementById('projectSubmitBtn');
-    submitBtn.disabled = true;
-
-    google.script.run
-      .withSuccessHandler(async function(res) {
-        submitBtn.disabled = false;
-        await showAlertModal(res, 'Project Saved', res.indexOf('Error') === 0 ? 'error' : 'success');
-        closeProjectFormModal();
-        resetProjectForm();
-        loadProjectCardsGrid();
-        if (originalName) document.getElementById('projectAnalyticsWorkspace').classList.add('hidden');
-      })
-      .withFailureHandler(function(err) {
-        submitBtn.disabled = false;
-        handleAuthFailure_(err);
-      })
-      .managerSaveProjectConfig(payload, MANAGER_PASSCODE);
-  }
-</script>
-      </div>
-    </div>
-
-    <!-- Global Dialog Overlay modal -->
-    <div id="appModalOverlay" class="fixed inset-0 bg-black bg-opacity-70 hidden items-center justify-center p-4" style="z-index: 9999;">
-      <div id="appModalBox" class="max-w-md w-full p-6 transition-all"></div>
-    </div>
-
-    <script>
-      // =========================================================
-      // STATIC HOSTING CONFIGURATION (e.g. GitHub Pages)
-      // Connects live using the URL configured in settings or hardcoded below:
-      // =========================================================
-      const APPS_SCRIPT_API_URL = localStorage.getItem('appsScriptApiUrl') || "https://script.google.com/macros/s/AKfycbyhQuudB2kLEOPyYSKVsJ8tFMtZI1Yj1bSXZdaS5UROnXjTT4JyY7b9OdaLLeCEx56_/exec";
-
-      let currentView = 'user';
-      let MANAGER_PASSCODE = null;
-
-      // ---------------------------------------------------------
-      // External API routing — JSONP (script tag) for GET calls,
-      // fetch POST only for file upload (submitUserData).
-      // JSONP completely bypasses CORS with no fetch redirects.
-      // ---------------------------------------------------------
-      function jsonpCall_(action, args, onSuccess, onFailure) {
-        const cbName = '_gsCb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-
-        const timeoutId = setTimeout(function() {
-          cleanup_();
-          onFailure(new Error('Request timed out (30s). Check your Apps Script URL and Web App deployment.'));
-        }, 30000);
-
-        function cleanup_() {
-          delete window[cbName];
-          const el = document.getElementById(cbName);
-          if (el) el.parentNode.removeChild(el);
-          clearTimeout(timeoutId);
-        }
-
-        window[cbName] = function(data) {
-          cleanup_();
-          if (data && data.success) {
-            onSuccess(data.data);
-          } else {
-            onFailure(new Error((data && data.error) || 'Server returned an error.'));
-          }
-        };
-
-        try {
-          const url = new URL(APPS_SCRIPT_API_URL);
-          url.searchParams.set('action', action);
-          if (args && args.length > 0) url.searchParams.set('args', JSON.stringify(args));
-          url.searchParams.set('callback', cbName);
-
-          const script = document.createElement('script');
-          script.id = cbName;
-          script.src = url.toString();
-          script.onerror = function() {
-            cleanup_();
-            onFailure(new Error('Script load failed. Verify your Apps Script URL is correct and deployed as Web App with access set to "Anyone".'));
-          };
-          document.head.appendChild(script);
-        } catch(urlErr) {
-          cleanup_();
-          onFailure(new Error('Invalid Apps Script URL. Please re-enter it in ⚙️ Connection settings.'));
-        }
-      }
-
-      function initClientAPIRouting_() {
-        const isExternal = APPS_SCRIPT_API_URL && !(window.google && google.script && google.script.run && google.script.run.getFormInitializationData);
-
-        if (isExternal) {
-          window.google = window.google || {};
-          window.google.script = window.google.script || {};
-
-          window.google.script.run = {
-            _successHandler: null,
-            _failureHandler: null,
-
-            withSuccessHandler: function(handler) {
-              this._successHandler = handler;
-              return this;
-            },
-            withFailureHandler: function(handler) {
-              this._failureHandler = handler;
-              return this;
-            }
-          };
-
-          const backendMethods = [
-            'getFormInitializationData',
-            'getRecruiterSubmissionsHistory',
-            'submitUserData',
-            'checkManagerPasscode',
-            'getExtendedProjectsList',
-            'getProjectDashboardMetrics',
-            'getRecruiterPerformanceForProject',
-            'managerCreateRecruiter',
-            'managerDeleteProject',
-            'managerRepairProjectHeaders',
-            'managerChangePasscode',
-            'managerGrantTeamAccessToAllProjects',
-            'managerDeleteSubmissionRecord',
-            'managerSaveProjectConfig'
-          ];
-
-          backendMethods.forEach(function(method) {
-            window.google.script.run[method] = function() {
-              const args    = Array.prototype.slice.call(arguments);
-              const self    = window.google.script.run;
-              const success = self._successHandler;
-              const failure = self._failureHandler;
-              self._successHandler = null;
-              self._failureHandler = null;
-
-              if (method === 'submitUserData') {
-                // File upload — large base64 payload, must use POST
-                const controller = new AbortController();
-                const tid = setTimeout(function() { controller.abort(); }, 60000);
-                fetch(APPS_SCRIPT_API_URL, {
-                  method: 'POST',
-                  redirect: 'follow',
-                  signal: controller.signal,
-                  headers: { 'Content-Type': 'text/plain' },
-                  body: JSON.stringify({ action: method, args: args })
-                })
-                .then(function(r) { clearTimeout(tid); return r.text(); })
-                .then(function(text) {
-                  try {
-                    const res = JSON.parse(text);
-                    if (res.success) { if (success) success(res.data); }
-                    else { if (failure) failure(new Error(res.error || 'Upload error')); }
-                  } catch(e) {
-                    if (failure) failure(new Error('Invalid upload response from server.'));
-                  }
-                })
-                .catch(function(err) {
-                  clearTimeout(tid);
-                  if (failure) failure(new Error('Upload failed: ' + err.message));
-                });
-              } else {
-                // All other calls — JSONP via script tag (100% CORS-safe)
-                jsonpCall_(method, args, 
-                  function(data) { if (success) success(data); },
-                  function(err)  { if (failure) failure(err);  }
-                );
-              }
-            };
-          });
-        }
-      }
-
-      initClientAPIRouting_();
-
-
-      // ---------------------------------------------------------
-      // Theme toggling and loading logic
-      // ---------------------------------------------------------
-      function toggleAppTheme() {
-        const isLight = document.body.classList.toggle('light-theme');
-        localStorage.setItem('docHubTheme', isLight ? 'light' : 'dark');
-        document.getElementById('themeToggleBtn').innerText = isLight ? '☀️' : '🌙';
-      }
-
-      function initAppTheme() {
-        const savedTheme = localStorage.getItem('docHubTheme');
-        const systemPrefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-        
-        const applyLight = savedTheme === 'light' || (!savedTheme && systemPrefersLight);
-        if (applyLight) {
-          document.body.classList.add('light-theme');
-          document.getElementById('themeToggleBtn').innerText = '☀️';
-        } else {
-          document.body.classList.remove('light-theme');
-          document.getElementById('themeToggleBtn').innerText = '🌙';
-        }
-      }
-      
-      document.addEventListener("DOMContentLoaded", initAppTheme);
-
-      // ---------------------------------------------------------
-      // Modal primitive overlay controls
-      // ---------------------------------------------------------
-      function escapeHtml_(str) {
-        const div = document.createElement('div');
-        div.textContent = str == null ? '' : String(str);
-        return div.innerHTML;
-      }
-
-      let openOverlayCount = 0;
-
-      function lockOverlayToViewport_(overlayEl) {
-        overlayEl.style.position = 'fixed';
-        overlayEl.style.top = '0';
-        overlayEl.style.left = '0';
-        overlayEl.style.width = '100%';
-        overlayEl.style.height = window.innerHeight + 'px';
-        overlayEl.classList.add('js-viewport-overlay-active');
-
-        if (openOverlayCount === 0) {
-          const scrollY = window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0;
-          document.body.dataset.scrollLockY = scrollY;
-          document.body.style.position = 'fixed';
-          document.body.style.top = '-' + scrollY + 'px';
-          document.body.style.left = '0';
-          document.body.style.right = '0';
-          document.body.style.width = '100%';
-        }
-        openOverlayCount++;
-      }
-
-      function unlockOverlayFromViewport_(overlayEl) {
-        if (overlayEl) overlayEl.classList.remove('js-viewport-overlay-active');
-        openOverlayCount = Math.max(0, openOverlayCount - 1);
-        if (openOverlayCount === 0) {
-          const scrollY = parseInt(document.body.dataset.scrollLockY || '0', 10);
-          document.body.style.position = '';
-          document.body.style.top = '';
-          document.body.style.left = '';
-          document.body.style.right = '';
-          document.body.style.width = '';
-          window.scrollTo(0, scrollY);
-        }
-      }
-
-      window.addEventListener('resize', () => {
-        if (openOverlayCount === 0) return;
-        document.querySelectorAll('.js-viewport-overlay-active').forEach(el => {
-          el.style.height = window.innerHeight + 'px';
-        });
-      });
-
-      function closeAppModal() {
-        const overlay = document.getElementById('appModalOverlay');
-        overlay.classList.add('hidden');
-        overlay.classList.remove('flex');
-        document.getElementById('appModalBox').innerHTML = '';
-        unlockOverlayFromViewport_(overlay);
-      }
-
-      function showAppModal(html) {
-        const overlay = document.getElementById('appModalOverlay');
-        const box = document.getElementById('appModalBox');
-        box.innerHTML = html;
-        overlay.classList.remove('hidden');
-        overlay.classList.add('flex');
-        lockOverlayToViewport_(overlay);
-      }
-
-      // Replaces alert(). type: 'info' | 'success' | 'error'
-      function showAlertModal(message, title, type) {
-        type = type || 'info';
-        const theme = {
-          success: { icon: '✨', titleClass: 'text-green-500 dark:text-green-400', btn: 'btn-premium-gradient' },
-          error:   { icon: '⚠️', titleClass: 'text-red-500 dark:text-red-400', btn: 'bg-red-600 hover:bg-red-700 text-white font-bold' },
-          info:    { icon: 'ℹ️', titleClass: 'text-indigo-500 dark:text-indigo-400', btn: 'btn-premium-gradient' }
-        }[type];
-
-        return new Promise(resolve => {
-          showAppModal(`
-            <div class="flex items-start gap-4 mb-5">
-              <span class="text-3xl leading-none">${theme.icon}</span>
-              <div>
-                <h3 class="text-lg font-bold ${theme.titleClass} mb-1">${escapeHtml_(title || 'Notice')}</h3>
-                <p class="text-sm var(--input-text) leading-relaxed whitespace-pre-line">${escapeHtml_(message)}</p>
-              </div>
-            </div>
-            <div class="flex justify-end">
-              <button id="appModalOkBtn" class="${theme.btn} px-5 py-2 rounded-xl text-sm transition">OK</button>
-            </div>
-          `);
-          
-          const btn = document.getElementById('appModalOkBtn');
-          if (btn) {
-            btn.focus();
-            btn.onclick = () => { closeAppModal(); resolve(); };
-          }
-        });
-      }
-
-      // Replaces confirm(). Returns a Promise<boolean>.
-      function showConfirmModal(message, title) {
-        return new Promise(resolve => {
-          showAppModal(`
-            <div class="mb-5">
-              <h3 class="text-lg font-bold text-indigo-500 dark:text-indigo-400 mb-2">${escapeHtml_(title || 'Please Confirm')}</h3>
-              <p class="text-sm var(--input-text) leading-relaxed whitespace-pre-line">${escapeHtml_(message)}</p>
-            </div>
-            <div class="flex justify-end gap-3">
-              <button id="appModalCancelBtn" class="btn-premium-secondary text-gray-400 px-5 py-2.5 rounded-xl text-sm transition">Cancel</button>
-              <button id="appModalConfirmBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition">Confirm</button>
-            </div>
-          `);
-          
-          const cancelBtn = document.getElementById('appModalCancelBtn');
-          const confirmBtn = document.getElementById('appModalConfirmBtn');
-          if (cancelBtn) cancelBtn.onclick = () => { closeAppModal(); resolve(false); };
-          if (confirmBtn) confirmBtn.onclick = () => { closeAppModal(); resolve(true); };
-        });
-      }
-
-      // Replaces prompt(). Returns a Promise<string|null>.
-      function showPromptModal(message, options) {
-        options = options || {};
-        const title = options.title || 'Input Required';
-        const inputType = options.inputType || 'text';
-        const placeholder = options.placeholder || '';
-
-        return new Promise(resolve => {
-          showAppModal(`
-            <h3 class="text-lg font-bold text-indigo-500 dark:text-indigo-400 mb-2">${escapeHtml_(title)}</h3>
-            <p class="text-sm var(--input-text) mb-4">${escapeHtml_(message)}</p>
-            <input id="appModalInput" type="${inputType}" placeholder="${escapeHtml_(placeholder)}" autocomplete="off" class="input-premium w-full p-3 rounded-xl text-sm mb-5">
-            <div class="flex justify-end gap-3">
-              <button id="appModalCancelBtn" class="btn-premium-secondary px-5 py-2.5 rounded-xl text-sm transition">Cancel</button>
-              <button id="appModalSubmitBtn" class="btn-premium-gradient px-5 py-2.5 rounded-xl text-sm transition">Submit</button>
-            </div>
-          `);
-          
-          const input = document.getElementById('appModalInput');
-          const submitBtn = document.getElementById('appModalSubmitBtn');
-          const cancelBtn = document.getElementById('appModalCancelBtn');
-          
-          if (input) {
-            input.focus();
-            input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
-          }
-          
-          const submit = () => { const val = input.value; closeAppModal(); resolve(val || null); };
-          if (submitBtn) submitBtn.onclick = submit;
-          if (cancelBtn) cancelBtn.onclick = () => { closeAppModal(); resolve(null); };
-        });
-      }
-
-      // Dedicated manager login form (password field, styled, no browser popup).
-      function showManagerLoginModal() {
-        return new Promise(resolve => {
-          showAppModal(`
-            <div class="text-center mb-4">
-              <div class="text-4xl mb-2">🔐</div>
-              <h3 class="text-xl font-bold">Manager Workspace</h3>
-              <p class="text-xs text-gray-400 mt-1">Enter the server-verified passcode to access dashboard.</p>
-              <div id="loginErrorMsg" class="text-red-400 text-xs mt-2 hidden font-bold"></div>
-            </div>
-            <input id="appModalInput" type="password" placeholder="••••••••" autocomplete="new-password" class="input-premium w-full p-3 text-center rounded-xl text-sm mb-5 tracking-widest text-lg">
-            <div class="flex justify-stretch gap-3">
-              <button id="appModalCancelBtn" class="btn-premium-secondary flex-1 py-3 rounded-xl text-sm transition">Cancel</button>
-              <button id="appModalSubmitBtn" class="btn-premium-gradient flex-1 py-3 rounded-xl text-sm transition">Authenticate</button>
-            </div>
-          `);
-          
-          const input = document.getElementById('appModalInput');
-          const submitBtn = document.getElementById('appModalSubmitBtn');
-          const cancelBtn = document.getElementById('appModalCancelBtn');
-          const errorMsg = document.getElementById('loginErrorMsg');
-          
-          if (input) {
-            input.focus();
-            input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
-          }
-          
-          const submit = () => {
-            const attempt = input.value;
-            if (!attempt) return;
+    <!-- ─── Page Viewer Modal ─── -->
+    <div id="viewer-modal" class="viewer-modal hidden">
+        <div class="viewer-container">
+            <header class="viewer-header">
+                <div class="viewer-title-group">
+                    <h2 class="viewer-title">View Document Page</h2>
+                    <span id="viewer-page-label" class="viewer-page-label">document.pdf p.1</span>
+                </div>
+                <div class="viewer-actions">
+                    <!-- Zoom Out Button -->
+                    <button id="viewer-btn-zoom-out" class="btn btn-outline btn-icon" title="Zoom Out">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <!-- Zoom Indicator -->
+                    <span id="viewer-zoom-level" class="viewer-zoom-level" style="font-size: 0.85rem; font-weight: 600; min-width: 44px; text-align: center; color: var(--text-muted);">100%</span>
+                    <!-- Zoom In Button -->
+                    <button id="viewer-btn-zoom-in" class="btn btn-outline btn-icon" title="Zoom In">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <!-- Reset Zoom Button -->
+                    <button id="viewer-btn-zoom-reset" class="btn btn-outline btn-icon" title="Reset Zoom">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 21v-5h5"/></svg>
+                    </button>
+                    <span class="viewer-actions-separator" style="width: 1px; height: 20px; background: var(--border); margin: 0 4px;"></span>
+                    <button id="viewer-btn-rot-l" class="btn btn-outline btn-icon" title="Rotate counter-clockwise">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2.15 2v6h6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    </button>
+                    <button id="viewer-btn-rot-r" class="btn btn-outline btn-icon" title="Rotate clockwise">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.85 2v6h-6M2.66 15.57a10 10 0 1 0 .57-8.38l-5.67-5.67"/></svg>
+                    </button>
+                    <span class="viewer-actions-separator" style="width: 1px; height: 20px; background: var(--border); margin: 0 4px;"></span>
+                    <button id="viewer-btn-close" class="viewer-close-btn" title="Close viewer">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+            </header>
             
-            submitBtn.disabled = true;
-            submitBtn.innerText = 'Authenticating...';
-            input.disabled = true;
-            errorMsg.classList.add('hidden');
+            <div class="viewer-body">
+                <!-- Navigation - Prev page -->
+                <button id="viewer-btn-prev" class="viewer-nav-btn viewer-nav-prev" title="Previous page (Left arrow)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
 
-            google.script.run
-              .withSuccessHandler(function() {
-                closeAppModal();
-                resolve(attempt);
-              })
-              .withFailureHandler(function() {
-                submitBtn.disabled = false;
-                submitBtn.innerText = 'Authenticate';
-                input.disabled = false;
-                input.value = '';
-                input.focus();
-                errorMsg.innerText = 'Incorrect passcode.';
-                errorMsg.classList.remove('hidden');
-              })
-              .checkManagerPasscode(attempt);
-          };
-          
-          if (submitBtn) submitBtn.onclick = submit;
-          if (cancelBtn) cancelBtn.onclick = () => { closeAppModal(); resolve(null); };
-        });
-      }
+                <!-- Page Workspace -->
+                <div class="viewer-workspace">
+                    <div id="viewer-canvas-container" class="viewer-canvas-container">
+                        <!-- Canvas, Image, or DOCX HTML will be rendered here -->
+                        <div id="viewer-overlays-layer" class="viewer-overlays-layer"></div>
+                    </div>
+                </div>
 
-      // ---------------------------------------------------------
-      // View toggling / manager auth
-      // ---------------------------------------------------------
-      async function toggleView() {
-        const userView = document.getElementById('userView');
-        const adminView = document.getElementById('adminView');
-        const btn = document.getElementById('navToggleBtn');
+                <!-- Navigation - Next page -->
+                <button id="viewer-btn-next" class="viewer-nav-btn viewer-nav-next" title="Next page (Right arrow)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+            </div>
+            
+            <footer class="viewer-footer">
+                <span id="viewer-page-counter" class="viewer-page-counter">Page 1 of 1</span>
+            </footer>
+        </div>
+    </div>
 
-        if (currentView === 'user') {
-
-          // Guard: if we are on static hosting (GitHub Pages) and no API URL
-          // has been configured yet, google.script.run will be undefined and
-          // the login will hang. Show a clear setup prompt instead.
-          const isInsideAppsScript = window.google && google.script &&
-            google.script.run &&
-            typeof google.script.run.checkManagerPasscode === 'function';
-          const hasApiUrl = !!(localStorage.getItem('appsScriptApiUrl') || '').trim();
-
-          if (!isInsideAppsScript && !hasApiUrl) {
-            await showAlertModal(
-              'No backend connection is configured yet.\n\nTo log in as Manager, first set up the Google Apps Script URL:\n\n1. Click OK to open Connection Settings\n2. Paste your Apps Script Web App URL\n3. Click "Connect Backend"\n4. Then try Manager Login again.',
-              'Backend Not Connected',
-              'info'
-            );
-            openApiSettingsModal();
-            return;
-          }
-
-          const attempt = await showManagerLoginModal();
-          if (!attempt) return;
-
-          // If we reach here, authentication was successful via the modal
-          btn.disabled = false;
-          MANAGER_PASSCODE = attempt;
-          userView.classList.add('hidden');
-          adminView.classList.remove('hidden');
-          btn.innerText = 'Switch to Upload Form';
-          currentView = 'admin';
-          if (typeof initManagerInterface === 'function') {
-            initManagerInterface();
-          }
-        } else {
-          userView.classList.remove('hidden');
-          adminView.classList.add('hidden');
-          btn.innerText = '🔒 Manager Workspace';
-          currentView = 'user';
-          MANAGER_PASSCODE = null; // clear access as soon as we leave the admin view
-          if (typeof initUserInterface === 'function') {
-            initUserInterface();
-          }
-        }
-      }
-
-      async function forceReturnToUserView(message) {
-        await showAlertModal(message || 'Your manager session is no longer valid. Please re-enter the passcode.', 'Session Expired', 'error');
-        MANAGER_PASSCODE = null;
-        currentView = 'admin'; // so toggleView() flips it back to 'user'
-        toggleView();
-      }
-
-      function openApiSettingsModal() {
-        const currentUrl = localStorage.getItem('appsScriptApiUrl') || "";
-        showAppModal(`
-          <div class="text-center mb-4">
-            <div class="text-3xl mb-2">⚙️</div>
-            <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">API Connection Settings</h3>
-            <p class="text-xs text-gray-555 dark:text-gray-400 mt-1 leading-relaxed">Connect this website to your Google Apps Script backend to load your live Google Sheet and Drive folders.</p>
-          </div>
-          
-          <div class="mb-5">
-            <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 text-left">Google Apps Script Web App URL</label>
-            <input id="apiSettingsUrlInput" type="url" value="${escapeHtml_(currentUrl)}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" class="input-premium w-full p-3 rounded-xl text-xs">
-            <p class="text-[10px] text-indigo-600 dark:text-indigo-400 mt-2 text-left leading-normal">
-              💡 <strong>How to get this URL:</strong> In your Google Apps Script editor, click <strong>Deploy > New Deployment</strong>, select <strong>Web App</strong>, copy the web app URL, and paste it here.
-            </p>
-          </div>
-
-          <div class="flex justify-stretch gap-3">
-            <button id="appModalCancelBtn" class="btn-premium-secondary flex-1 py-2.5 rounded-xl text-xs transition">Cancel</button>
-            <button id="apiSettingsSaveBtn" class="btn-premium-gradient flex-1 py-2.5 rounded-xl text-xs transition">Connect Backend</button>
-          </div>
-        `);
-
-        document.getElementById('appModalCancelBtn').onclick = closeAppModal;
-        document.getElementById('apiSettingsSaveBtn').onclick = () => {
-          const inputVal = document.getElementById('apiSettingsUrlInput').value.trim();
-          if (inputVal) {
-            localStorage.setItem('appsScriptApiUrl', inputVal);
-            showAlertModal('Successfully linked to Google Apps Script API! The application will now reload to synchronize all project databases.', 'Connection Saved', 'success')
-              .then(() => { window.location.reload(); });
-          } else {
-            localStorage.removeItem('appsScriptApiUrl');
-            showAlertModal('API URL cleared. The app will revert to running inside Google Apps Script iframe template mode.', 'Connection Cleared', 'info')
-              .then(() => { window.location.reload(); });
-          }
-        };
-      }
-    </script>
-  </body>
+    <script src="app.js?v=2"></script>
+</body>
 </html>
