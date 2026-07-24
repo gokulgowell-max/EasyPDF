@@ -1,2197 +1,1505 @@
-// app.js - Core application logic, Google Sheets Sync, visual editor, and router for Gowell InfoHub
+/* ══════════════════════════════════════════════════════════════
+   EasyPDF — Application Logic
+   ══════════════════════════════════════════════════════════════ */
 
-// --- GLOBAL APPLICATION STATE ---
-const state = {
-  teams: [],
-  projects: [],
-  currentView: 'home', // 'home' | 'team' | 'admin'
-  currentTeamId: null,
-  activeFilterStatus: 'ongoing', // 'all' | 'ongoing' | 'upcoming' | 'completed'
-  searchQuery: '',
-  adminActiveTab: 'projects', // 'projects' | 'teams' | 'settings'
-  selectedProject: null,
-  theme: 'light',
-  isLoggedIn: false,
-  
-  // Modal states
-  showTableDialog: false,
-  
-  // Forms state
-  editingProjectId: null,
-  editingTeamId: null
-};
+(() => {
+    "use strict";
 
-// --- INITIALIZATION ---
-document.addEventListener('DOMContentLoaded', () => {
-  // Initialize storage & state
-  db.init();
-  state.teams = db.getTeams();
-  state.projects = db.getProjects();
-  
-  // Theme check
-  const savedTheme = localStorage.getItem('gowell_theme') || 'light';
-  setTheme(savedTheme);
-  
-  // Check active admin session (simple session preservation)
-  const sessionToken = sessionStorage.getItem('gowell_admin_token');
-  if (sessionToken === 'authenticated') {
-    state.isLoggedIn = true;
-  }
-  
-  // Initialize routes from hash URL
-  handleRouting();
-  window.addEventListener('hashchange', handleRouting);
-  
-  // Bind Global UI Events
-  bindGlobalEvents();
+    // ── Configure PDF.js worker ──
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-  // Trigger Google Sheet Auto Sync if enabled
-  if (db.isSheetSyncEnabled() && db.getSheetId()) {
-    triggerGoogleSheetsSync(true); // silent/on-load sync
-  }
-});
+    // ── DOM References ──
+    const $          = (sel) => document.querySelector(sel);
+    const uploadZone = $("#upload-zone");
+    const dropArea   = $("#drop-area");
+    const fileInput  = $("#file-input");
+    const fileInputMore = $("#file-input-more");
+    const pagesSection = $("#pages-section");
+    const pagesGrid  = $("#pages-grid");
+    const pageCount  = $("#page-count");
+    const btnMakePdf = $("#btn-make-pdf");
+    const btnClear   = $("#btn-clear");
+    const btnAddMore = $("#btn-add-more");
+    const filenameInput = $("#filename-input");
+    const overlay    = $("#processing-overlay");
+    const overlayText = $("#processing-text");
+    const toastContainer = $("#toast-container");
+    const compressionSelect = $("#compression-select");
 
-// --- THEME MANAGEMENT ---
-function setTheme(theme) {
-  state.theme = theme;
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('gowell_theme', theme);
-  
-  const themeBtnIcon = document.querySelector('.theme-toggle-btn i');
-  if (themeBtnIcon) {
-    themeBtnIcon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-  }
-}
+    // Editor DOM References
+    const editorModal = $("#editor-modal");
+    const editorCloseBtn = $("#editor-btn-close");
+    const editorDoneBtn = $("#editor-btn-done");
+    const editorPageLabel = $("#editor-page-label");
+    const editorCanvasContainer = $("#editor-canvas-container");
+    const editorOverlaysLayer = $("#editor-overlays-layer");
+    const editorBtnAddText = $("#editor-btn-add-text");
+    const editorBtnAddShape = $("#editor-btn-add-shape");
+    const editorPropertiesPanel = $("#editor-properties-panel");
+    const editorNoSelection = $("#editor-no-selection");
+    const editorBtnDeleteEl = $("#editor-btn-delete-el");
 
-// --- ROUTER / VIEW SWITCHER ---
-function handleRouting() {
-  const hash = window.location.hash;
-  
-  if (hash === '' || hash === '#home') {
-    state.currentView = 'home';
-    state.currentTeamId = null;
-  } else if (hash.startsWith('#team/')) {
-    state.currentView = 'team';
-    state.currentTeamId = hash.split('/')[1];
-    state.activeFilterStatus = 'ongoing';
-    state.searchQuery = '';
-  } else if (hash === '#admin') {
-    state.currentView = 'admin';
-  } else {
-    window.location.hash = '#home';
-    return;
-  }
-  
-  renderApp();
-}
-
-function navigateTo(hash) {
-  window.location.hash = hash;
-}
-
-// --- RENDER APP ENGINE ---
-function renderApp() {
-  // Hide all main containers
-  document.getElementById('home-view').style.display = 'none';
-  document.getElementById('team-view').style.display = 'none';
-  document.getElementById('admin-view').style.display = 'none';
-  
-  // Update header buttons active state
-  const adminNavBtn = document.getElementById('nav-admin-btn');
-  if (state.currentView === 'admin') {
-    adminNavBtn.innerHTML = '<i class="fa-solid fa-house"></i> View Site';
-    adminNavBtn.onclick = () => navigateTo('#home');
-  } else {
-    adminNavBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Admin Portal';
-    adminNavBtn.onclick = () => navigateTo('#admin');
-  }
-
-  // Render view content
-  if (state.currentView === 'home') {
-    document.getElementById('home-view').style.display = 'block';
-    renderHomeView();
-  } else if (state.currentView === 'team') {
-    document.getElementById('team-view').style.display = 'block';
-    renderTeamView();
-  } else if (state.currentView === 'admin') {
-    document.getElementById('admin-view').style.display = 'block';
-    renderAdminView();
-  }
-}
-
-// --- HOME VIEW RENDERING ---
-function renderHomeView() {
-  // Refresh stats
-  const totalTeams = state.teams.length;
-  const totalProjects = state.projects.length;
-  const ongoingCount = state.projects.filter(p => p.status === 'ongoing').length;
-  const upcomingCount = state.projects.filter(p => p.status === 'upcoming').length;
-  const completedCount = state.projects.filter(p => p.status === 'completed').length;
-  
-  // Render teams grid
-  const grid = document.getElementById('teams-grid-container');
-  grid.innerHTML = '';
-  
-  state.teams.forEach(team => {
-    const teamProjects = state.projects.filter(p => p.teamId === team.id);
-    const card = document.createElement('div');
-    card.className = 'team-card';
-    card.onclick = () => navigateTo(`#team/${team.id}`);
+    // Viewer DOM References
+    const viewerModal = $("#viewer-modal");
+    const viewerCloseBtn = $("#viewer-btn-close");
+    const viewerPageLabel = $("#viewer-page-label");
+    const viewerCanvasContainer = $("#viewer-canvas-container");
+    const viewerOverlaysLayer = $("#viewer-overlays-layer");
+    const viewerBtnRotL = $("#viewer-btn-rot-l");
+    const viewerBtnRotR = $("#viewer-btn-rot-r");
+    const viewerBtnPrev = $("#viewer-btn-prev");
+    const viewerBtnNext = $("#viewer-btn-next");
+    const viewerPageCounter = $("#viewer-page-counter");
+    const viewerBtnZoomIn = $("#viewer-btn-zoom-in");
+    const viewerBtnZoomOut = $("#viewer-btn-zoom-out");
+    const viewerBtnZoomReset = $("#viewer-btn-zoom-reset");
+    const viewerZoomLevel = $("#viewer-zoom-level");
     
-    card.innerHTML = `
-      <div class="team-icon-wrapper">
-        <i class="fa-solid ${team.icon || 'fa-users'}"></i>
-      </div>
-      <h3>${escapeHTML(team.name)}</h3>
-      <p>${escapeHTML(team.description)}</p>
-      <div class="team-card-footer">
-        <span>${teamProjects.length} Projects</span>
-        <i class="fa-solid fa-arrow-right"></i>
-      </div>
-    `;
-    grid.appendChild(card);
-  });
-}
+    // Properties panels
+    const propTextInput = $("#prop-text-input");
+    const propFontFamily = $("#prop-font-family");
+    const propFontSize = $("#prop-font-size");
+    const propFontSizeVal = $("#prop-font-size-val");
+    const propShapeType = $("#prop-shape-type");
+    const propTextGroup = $("#prop-text-group");
+    const propShapeGroup = $("#prop-shape-group");
+    const colorSwatches = document.querySelectorAll(".color-swatch");
 
-// --- TEAM VIEW RENDERING ---
-function renderTeamView() {
-  const team = state.teams.find(t => t.id === state.currentTeamId);
-  if (!team) {
-    navigateTo('#home');
-    return;
-  }
-  
-  // Team Header
-  document.getElementById('team-view-title').innerHTML = `
-    <i class="fa-solid ${team.icon || 'fa-users'}" style="color: var(--primary-color);"></i>
-    ${escapeHTML(team.name)}
-  `;
-  document.getElementById('team-view-desc').innerText = team.description;
-  
-  // Refresh project lists
-  const teamProjects = state.projects.filter(p => p.teamId === team.id);
-  
-  // Calculate tabs counts
-  const counts = {
-    all: teamProjects.length,
-    ongoing: teamProjects.filter(p => p.status === 'ongoing').length,
-    upcoming: teamProjects.filter(p => p.status === 'upcoming').length,
-    completed: teamProjects.filter(p => p.status === 'completed').length
-  };
-  
-  // Set tab badges
-  document.getElementById('badge-all').innerText = counts.all;
-  document.getElementById('badge-ongoing').innerText = counts.ongoing;
-  document.getElementById('badge-upcoming').innerText = counts.upcoming;
-  document.getElementById('badge-completed').innerText = counts.completed;
-  
-  // Highlight correct active tab
-  document.querySelectorAll('.status-tab').forEach(tab => {
-    if (tab.dataset.status === state.activeFilterStatus) {
-      tab.classList.add('active');
-    } else {
-      tab.classList.remove('active');
+    // ── State ──
+    // Each item: { id, type: 'pdf-page'|'image'|'docx', blob, thumbDataUrl, label, pdfBytes?, pageIndex?, width, height, rotation, edits[] }
+    let pages = [];
+    let idCounter = 0;
+    let sortable = null;
+
+    // Editor State
+    let activePage = null;
+    let activeElement = null;
+    let overlayIdCounter = 0;
+
+    // Viewer State
+    let viewerActivePageId = null;
+    let viewerZoom = 1.0;
+    let viewerPanX = 0;
+    let viewerPanY = 0;
+    let isViewerDragging = false;
+    let startDragX = 0;
+    let startDragY = 0;
+
+    // ══════════════════════════════════════════════════════════════
+    //  Utilities
+    // ══════════════════════════════════════════════════════════════
+
+    function uid() { return ++idCounter; }
+
+    function showToast(message, type = "success") {
+        const t = document.createElement("div");
+        t.className = `toast toast-${type}`;
+        t.textContent = message;
+        toastContainer.appendChild(t);
+        setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(12px)"; setTimeout(() => t.remove(), 300); }, 3500);
     }
-  });
-  
-  // Filter & Search projects
-  let filteredProjects = teamProjects;
-  if (state.activeFilterStatus !== 'all') {
-    filteredProjects = filteredProjects.filter(p => p.status === state.activeFilterStatus);
-  }
-  
-  if (state.searchQuery.trim() !== '') {
-    const query = state.searchQuery.toLowerCase();
-    filteredProjects = filteredProjects.filter(p => 
-      p.title.toLowerCase().includes(query) || 
-      p.summary.toLowerCase().includes(query)
-    );
-  }
-  
-  // Sort projects: newly created first
-  filteredProjects.sort((a, b) => {
-    const timeA = (a.id && a.id.startsWith('proj-')) ? parseInt(a.id.split('-')[1]) || new Date(a.updatedAt || 0).getTime() : new Date(a.updatedAt || 0).getTime();
-    const timeB = (b.id && b.id.startsWith('proj-')) ? parseInt(b.id.split('-')[1]) || new Date(b.updatedAt || 0).getTime() : new Date(b.updatedAt || 0).getTime();
-    return timeB - timeA;
-  });
 
-  // Render Project Cards
-  const container = document.getElementById('projects-grid-container');
-  container.innerHTML = '';
-  
-  if (filteredProjects.length === 0) {
-    container.innerHTML = `
-      <div class="no-projects">
-        <i class="fa-solid fa-folder-open"></i>
-        <p>No projects found in this category.</p>
-      </div>
-    `;
-    return;
-  }
-  
-  filteredProjects.forEach(proj => {
-    const card = document.createElement('div');
-    card.className = 'project-card';
-    card.onclick = () => openProjectModal(proj.id);
-    
-    // Status text & icon (Static Ongoing)
-    let statusLabel = 'Ongoing';
-    let statusIcon = 'fa-circle-dot';
-    if (proj.status === 'upcoming') {
-      statusLabel = 'Upcoming';
-      statusIcon = 'fa-calendar-days';
-    } else if (proj.status === 'completed') {
-      statusLabel = 'Completed';
-      statusIcon = 'fa-circle-check';
+    function showOverlay(text) { overlayText.textContent = text; overlay.classList.remove("hidden"); }
+    function hideOverlay()     { overlay.classList.add("hidden"); }
+
+    function updateUI() {
+        const hasPages = pages.length > 0;
+        uploadZone.classList.toggle("hidden", hasPages);
+        pagesSection.classList.toggle("hidden", !hasPages);
+        pageCount.textContent = `${pages.length} page${pages.length !== 1 ? "s" : ""}`;
+        btnMakePdf.disabled = !hasPages;
+        btnClear.disabled   = !hasPages;
+        btnAddMore.disabled = !hasPages;
     }
-    
-    const formattedDate = new Date(proj.updatedAt || Date.now()).toLocaleDateString('en-US', {
-      year: 'numeric', month: 'short', day: 'numeric'
-    });
-    
-    card.innerHTML = `
-      <div class="card-header">
-        <span class="project-tag ${proj.status}">
-          <i class="fa-solid ${statusIcon}"></i> ${statusLabel}
-        </span>
-      </div>
-      <h4>${escapeHTML(proj.title)}</h4>
-      <p class="project-summary">${escapeHTML(proj.summary)}</p>
-      <div class="project-card-footer">
-        <span>Updated: ${formattedDate}</span>
-        <span class="click-hint">Read Details <i class="fa-solid fa-chevron-right"></i></span>
-      </div>
-    `;
-    container.appendChild(card);
-  });
-}
 
-// --- PROJECT DETAIL MODAL ---
-function openProjectModal(projectId) {
-  const project = state.projects.find(p => p.id === projectId);
-  if (!project) return;
-  
-  const team = state.teams.find(t => t.id === project.teamId);
-  state.selectedProject = project;
-  
-  // Fill Modal Contents
-  document.getElementById('modal-project-title').innerText = project.title;
-  document.getElementById('modal-project-team').innerHTML = `
-    <i class="fa-solid fa-users"></i> ${escapeHTML(team ? team.name : 'Unknown Team')}
-  `;
-  
-  // Status tag (Static Ongoing Icon)
-  const statusBadge = document.getElementById('modal-project-status');
-  statusBadge.className = `project-tag ${project.status}`;
-  let statusText = 'Ongoing';
-  let statusIcon = 'fa-circle-dot';
-  if (project.status === 'upcoming') {
-    statusText = 'Upcoming';
-    statusIcon = 'fa-calendar-days';
-  } else if (project.status === 'completed') {
-    statusText = 'Completed';
-    statusIcon = 'fa-circle-check';
-  }
-  statusBadge.innerHTML = `<i class="fa-solid ${statusIcon}"></i> ${statusText}`;
-  
-  // Detailed text body
-  document.getElementById('modal-project-body').innerHTML = project.details || `<p>${escapeHTML(project.summary)}</p>`;
-  
-  // Wrap all tables inside the modal body to enable responsive scrolling with freeze header
-  const tables = document.querySelectorAll('#modal-project-body table');
-  tables.forEach(table => {
-    if (table.parentElement && !table.parentElement.classList.contains('table-scroll-container')) {
-      const wrapper = document.createElement('div');
-      wrapper.className = 'table-scroll-container';
-      table.parentNode.insertBefore(wrapper, table);
-      wrapper.appendChild(table);
+    function rotatePage(id, diff) {
+        const p = pages.find(page => page.id === id);
+        if (p) {
+            const card = pagesGrid.querySelector(`.page-card[data-id="${id}"]`);
+            if (card) {
+                const thumb = card.querySelector(".page-thumb");
+                if (thumb) {
+                    if (p.rotation) {
+                        thumb.classList.remove(`rotate-${p.rotation}`);
+                    }
+                    p.rotation = (p.rotation + diff + 360) % 360;
+                    if (p.rotation) {
+                        thumb.classList.add(`rotate-${p.rotation}`);
+                    }
+                }
+            } else {
+                p.rotation = (p.rotation + diff + 360) % 360;
+            }
+        }
     }
-  });
 
-  // Handle Positions Rendering in Modal
-  const positionsContainer = document.getElementById('modal-project-positions-container');
-  const positionsList = document.getElementById('modal-project-positions-list');
-  positionsContainer.style.display = 'none';
-  positionsList.innerHTML = '';
-  
-  if (project.positions) {
-    try {
-      const positions = JSON.parse(project.positions);
-      if (Array.isArray(positions) && positions.length > 0) {
-        positionsList.style.display = 'flex';
-        positionsList.style.flexDirection = 'column';
-        positionsList.style.gap = '20px';
-        
-        positions.forEach(pos => {
-          const section = document.createElement('div');
-          section.className = 'position-section-card';
-          section.style.cssText = `
-            background: var(--bg-card); 
-            border: 1px solid var(--border-color); 
-            padding: 20px; 
-            border-radius: var(--radius-md); 
-            box-shadow: var(--shadow-sm);
-          `;
-          
-          const bodyId = 'pos-body-' + Math.random().toString(36).substring(2, 9);
-          
-          // Header for position (Accordion Toggle)
-          let html = `
-            <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; padding: 10px; border-radius: var(--radius-sm); transition: background 0.2s ease;" onmouseover="this.style.background='var(--bg-main)'" onmouseout="this.style.background='transparent'" onclick="const body = document.getElementById('${bodyId}'); const icon = this.querySelector('.toggle-icon'); if (body.style.display === 'none') { body.style.display = 'block'; this.style.borderBottom = '1px solid var(--border-color)'; this.style.paddingBottom = '16px'; this.style.marginBottom = '12px'; icon.className = 'fa-solid fa-chevron-up toggle-icon'; } else { body.style.display = 'none'; this.style.borderBottom = 'none'; this.style.paddingBottom = '10px'; this.style.marginBottom = '0'; icon.className = 'fa-solid fa-chevron-down toggle-icon'; }">
-              <h4 style="color: var(--primary-color); margin: 0; font-size:1.15rem; display:flex; align-items:center; gap:8px;">
-                <i class="fa-solid fa-user-tie"></i> ${escapeHTML(pos.title)}
-              </h4>
-              <span style="background:var(--status-ongoing-bg); color:var(--status-ongoing); padding:4px 12px; border-radius:50px; font-weight:700; font-size:0.8rem; border:1px solid var(--status-ongoing); white-space: nowrap; display:flex; align-items:center; gap:8px;">
-                ${pos.count} Opening${pos.count > 1 ? 's' : ''}
-                <i class="fa-solid fa-chevron-down toggle-icon" style="font-size: 0.8rem; opacity: 0.8;"></i>
-              </span>
-            </div>
-            <div id="${bodyId}" style="display:none; padding: 0 10px 10px 10px;">
-          `;
-          
-          // Migrate old formats dynamically if they are loaded
-          let requirements = pos.requirements || [];
-          if (requirements.length === 0) {
-            if (pos.qualification) requirements.push({ label: 'QUALIFICATION', value: pos.qualification });
-            if (pos.experience) requirements.push({ label: 'EXPERIENCE', value: pos.experience });
+    function renderPages() {
+        pagesGrid.innerHTML = "";
+        pages.forEach((p, i) => {
+            const card = document.createElement("div");
+            card.className = "page-card";
+            card.dataset.id = p.id;
+            card.style.animationDelay = `${i * .04}s`;
+
+            const thumb = document.createElement("div");
+            thumb.className = "page-thumb";
+            if (p.rotation) {
+                thumb.classList.add(`rotate-${p.rotation}`);
+            }
+
+            if (p.type === "docx") {
+                const div = document.createElement("div");
+                div.className = "docx-preview";
+                div.innerHTML = p.htmlContent || "<p>DOCX</p>";
+                thumb.appendChild(div);
+            } else {
+                const img = document.createElement("img");
+                img.src = p.thumbDataUrl;
+                img.alt = p.label;
+                img.draggable = false;
+                thumb.appendChild(img);
+            }
+
+            const info = document.createElement("div");
+            info.className = "page-info";
             
-            const currency = pos.currency || 'EURO';
-            const salaryVal = pos.salaryVal || pos.salaryEuro || '';
-            if (salaryVal) requirements.push({ label: `SALARY (${currency.toUpperCase()})`, value: salaryVal });
-            
-            if (pos.salaryInr) requirements.push({ label: 'SALARY (INR)', value: pos.salaryInr });
-          }
-          
-          // Build specifications table from dynamic requirements array
-          if (requirements.length > 0) {
-            html += `
-              <div class="table-scroll-container" style="margin: 12px 0;">
-                <table class="gowell-striped-table" style="width: 100%; border-collapse: separate !important; border-spacing: 0 !important; margin: 0 !important; border: none !important;">
-                  <thead>
-                    <tr>
-            `;
-            
-            // Generate headers
-            requirements.forEach(req => {
-              html += `<th style="background-color: var(--table-header-bg) !important; color: var(--table-header-text) !important; text-transform: uppercase;">${escapeHTML(req.label)}</th>`;
+            // Edit Badge (pencil icon) if the page has text overlays or shapes
+            if (p.edits && p.edits.length > 0) {
+                const editBadge = document.createElement("span");
+                editBadge.className = "page-edit-badge";
+                editBadge.title = "Page has text/overlay edits";
+                editBadge.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`;
+                info.appendChild(editBadge);
+            }
+
+            const label = document.createElement("span");
+            label.className = "page-label";
+            label.textContent = p.label;
+            label.title = p.label;
+            const num = document.createElement("span");
+            num.className = "page-number";
+            num.textContent = i + 1;
+            info.appendChild(label);
+            info.appendChild(num);
+
+            // Hover actions overlay
+            const actions = document.createElement("div");
+            actions.className = "page-actions";
+
+            const btnRotL = document.createElement("button");
+            btnRotL.className = "page-action-btn btn-rotate";
+            btnRotL.title = "Rotate counter-clockwise";
+            btnRotL.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M2.15 2v6h6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>`;
+            btnRotL.addEventListener("click", (e) => { e.stopPropagation(); rotatePage(p.id, -90); });
+
+            const btnRotR = document.createElement("button");
+            btnRotR.className = "page-action-btn btn-rotate";
+            btnRotR.title = "Rotate clockwise";
+            btnRotR.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21.85 2v6h-6M2.66 15.57a10 10 0 1 0 .57-8.38l-5.67-5.67"/></svg>`;
+            btnRotR.addEventListener("click", (e) => { e.stopPropagation(); rotatePage(p.id, 90); });
+
+            const btnEdit = document.createElement("button");
+            btnEdit.className = "page-action-btn btn-edit";
+            btnEdit.title = "Edit page text/redactions";
+            btnEdit.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`;
+            btnEdit.addEventListener("click", (e) => { e.stopPropagation(); openEditor(p.id); });
+
+            const btnDel = document.createElement("button");
+            btnDel.className = "page-action-btn btn-delete";
+            btnDel.title = "Remove page";
+            btnDel.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+            btnDel.addEventListener("click", (e) => { e.stopPropagation(); removePage(p.id); });
+
+            actions.appendChild(btnRotL);
+            actions.appendChild(btnRotR);
+            actions.appendChild(btnEdit);
+            actions.appendChild(btnDel);
+
+            card.appendChild(actions);
+            card.appendChild(thumb);
+            card.appendChild(info);
+
+            // Double-click to open page viewer popup
+            card.addEventListener("dblclick", (e) => {
+                if (e.target.closest(".page-actions")) return;
+                openViewer(p.id);
             });
-            
-            html += `
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-            `;
-            
-            // Generate cell values
-            requirements.forEach(req => {
-              html += `<td style="border-bottom: 1px solid var(--table-border);">${escapeHTML(req.value || 'N/A')}</td>`;
-            });
-            
-            html += `
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            `;
-          }
-          
-          // Additional notes/description (HTML format from editor)
-          if (pos.description && pos.description.trim() !== '' && pos.description !== '<p><br></p>') {
-            html += `
-              <div style="margin-top:12px; padding:12px; background:var(--bg-main); border-radius:var(--radius-sm); font-size:0.95rem; color:var(--text-muted); line-height:1.6;">
-                <strong style="display:block; margin-bottom:6px; color:var(--text-main);">Position Specifications:</strong>
-                <div class="rich-text-content">${pos.description}</div>
-              </div>
-            `;
-          }
-          
-          html += `</div>`;
-          
-          section.innerHTML = html;
-          positionsList.appendChild(section);
+
+            pagesGrid.appendChild(card);
         });
-        positionsContainer.style.display = 'block';
-      }
-    } catch (e) {
-      console.error("Failed to parse project positions inside modal:", e);
+
+        initSortable();
+        updateUI();
     }
-  }
-  
-  // Show modal
-  const modal = document.getElementById('project-detail-modal');
-  modal.classList.add('active');
-  document.body.style.overflow = 'hidden';
-}
 
-function closeProjectModal() {
-  const modal = document.getElementById('project-detail-modal');
-  modal.classList.remove('active');
-  document.body.style.overflow = '';
-  state.selectedProject = null;
-}
-
-// --- ADMIN PORTAL VIEW ---
-function renderAdminView() {
-  const loginSection = document.getElementById('admin-login-section');
-  const dashSection = document.getElementById('admin-dashboard-section');
-  
-  if (!state.isLoggedIn) {
-    loginSection.style.display = 'block';
-    dashSection.style.display = 'none';
-    document.getElementById('admin-login-pwd').value = '';
-    document.getElementById('admin-login-pwd').focus();
-    return;
-  }
-  
-  loginSection.style.display = 'none';
-  dashSection.style.display = 'block';
-  
-  // Set Active sidebar option
-  document.querySelectorAll('.admin-menu-item').forEach(item => {
-    item.classList.remove('active');
-    if (item.dataset.tab === state.adminActiveTab) {
-      item.classList.add('active');
+    function removePage(id) {
+        pages = pages.filter(p => p.id !== id);
+        renderPages();
     }
-  });
-  
-  // Hide all panels
-  document.getElementById('admin-projects-panel').style.display = 'none';
-  document.getElementById('admin-teams-panel').style.display = 'none';
-  document.getElementById('admin-settings-panel').style.display = 'none';
-  document.getElementById('admin-project-form-panel').style.display = 'none';
-  document.getElementById('admin-team-form-panel').style.display = 'none';
-  
-  // Show active panel
-  if (state.adminActiveTab === 'projects') {
-    document.getElementById('admin-projects-panel').style.display = 'block';
-    renderAdminProjectsList();
-  } else if (state.adminActiveTab === 'teams') {
-    document.getElementById('admin-teams-panel').style.display = 'block';
-    renderAdminTeamsList();
-  } else if (state.adminActiveTab === 'settings') {
-    document.getElementById('admin-settings-panel').style.display = 'block';
-    populateSettingsFields();
-  }
-}
 
-// Admin project list render
-function renderAdminProjectsList() {
-  const tbody = document.querySelector('#admin-projects-table tbody');
-  tbody.innerHTML = '';
-  
-  if (state.projects.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No projects in database. Click Add Project to start.</td></tr>';
-    return;
-  }
-  
-  state.projects.forEach(proj => {
-    const team = state.teams.find(t => t.id === proj.teamId);
-    const row = document.createElement('tr');
-    
-    let statusText = `<span class="project-tag ${proj.status}" style="font-size:0.75rem;">${proj.status}</span>`;
-    const dateText = new Date(proj.updatedAt || Date.now()).toLocaleDateString('en-US');
-    
-    row.innerHTML = `
-      <td style="font-weight:600;">${escapeHTML(proj.title)}</td>
-      <td>${escapeHTML(team ? team.name : 'Deleted Team')}</td>
-      <td>${statusText}</td>
-      <td>${dateText}</td>
-      <td>
-        <div class="action-buttons">
-          <button class="btn-icon edit" onclick="showProjectForm('edit', '${proj.id}')" title="Edit Project"><i class="fa-solid fa-pencil"></i></button>
-          <button class="btn-icon delete" onclick="deleteProject('${proj.id}')" title="Delete Project"><i class="fa-solid fa-trash"></i></button>
-        </div>
-      </td>
-    `;
-    tbody.appendChild(row);
-  });
-}
+    // ══════════════════════════════════════════════════════════════
+    //  Sortable
+    // ══════════════════════════════════════════════════════════════
 
-// Admin team list render
-function renderAdminTeamsList() {
-  const tbody = document.querySelector('#admin-teams-table tbody');
-  tbody.innerHTML = '';
-  
-  state.teams.forEach(team => {
-    const teamProjects = state.projects.filter(p => p.teamId === team.id);
-    const row = document.createElement('tr');
-    
-    row.innerHTML = `
-      <td><span class="logo-icon" style="width:30px; height:30px; font-size:0.9rem;"><i class="fa-solid ${team.icon || 'fa-users'}"></i></span></td>
-      <td style="font-weight:600;">${escapeHTML(team.name)}</td>
-      <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(team.description)}</td>
-      <td>${teamProjects.length}</td>
-      <td>
-        <div class="action-buttons">
-          <button class="btn-icon edit" onclick="showTeamForm('edit', '${team.id}')" title="Edit Team"><i class="fa-solid fa-pencil"></i></button>
-          <button class="btn-icon delete" onclick="deleteTeam('${team.id}')" title="Delete Team"><i class="fa-solid fa-trash"></i></button>
-        </div>
-      </td>
-    `;
-    tbody.appendChild(row);
-  });
-}
+    function initSortable() {
+        if (sortable) sortable.destroy();
+        sortable = new Sortable(pagesGrid, {
+            animation: 200,
+            ghostClass: "sortable-ghost",
+            chosenClass: "sortable-chosen",
+            easing: "cubic-bezier(.4,0,.2,1)",
+            onEnd(evt) {
+                const [moved] = pages.splice(evt.oldIndex, 1);
+                pages.splice(evt.newIndex, 0, moved);
+                // Update page numbers without full re-render
+                pagesGrid.querySelectorAll(".page-number").forEach((el, i) => el.textContent = i + 1);
+            },
+        });
+    }
 
-// --- ADMIN LOGIN LOGIC ---
-function handleAdminLogin(event) {
-  event.preventDefault();
-  const password = document.getElementById('admin-login-pwd').value;
-  const correctPassword = db.getAdminPassword();
-  
-  if (password === correctPassword) {
-    state.isLoggedIn = true;
-    sessionStorage.setItem('gowell_admin_token', 'authenticated');
-    renderAdminView();
-  } else {
-    alert('Invalid admin password! Please try again.');
-  }
-}
+    // ══════════════════════════════════════════════════════════════
+    //  File Processing
+    // ══════════════════════════════════════════════════════════════
 
-function handleAdminLogout() {
-  if (confirm('Are you sure you want to log out from the Admin Portal?')) {
-    state.isLoggedIn = false;
-    sessionStorage.removeItem('gowell_admin_token');
-    navigateTo('#home');
-  }
-}
+    async function processFiles(files) {
+        if (!files.length) return;
+        showOverlay("Processing files…");
 
-// --- PROJECT CREATE/EDIT FORM LOGIC ---
-function showProjectForm(mode, projectId = null) {
-  state.adminActiveTab = '';
-  document.querySelectorAll('.admin-menu-item').forEach(item => item.classList.remove('active'));
-  
-  document.getElementById('admin-projects-panel').style.display = 'none';
-  document.getElementById('admin-project-form-panel').style.display = 'block';
-  
-  const formTitle = document.getElementById('project-form-title');
-  const teamSelect = document.getElementById('project-form-team');
-  
-  teamSelect.innerHTML = '';
-  state.teams.forEach(t => {
-    const opt = document.createElement('option');
-              opt.value = t.id;
-    opt.innerText = t.name;
-    teamSelect.appendChild(opt);
-  });
-  
-  const positionsInputsContainer = document.getElementById('project-positions-inputs-container');
-  positionsInputsContainer.innerHTML = '';
-  
-  if (mode === 'add') {
-    state.editingProjectId = null;
-    formTitle.innerText = 'Add New Project';
-    document.getElementById('project-form-title-input').value = '';
-    document.getElementById('project-form-status').value = 'ongoing';
-    document.getElementById('project-form-summary').value = '';
-  } else {
-    state.editingProjectId = projectId;
-    formTitle.innerText = 'Edit Project';
-    
-    const project = state.projects.find(p => p.id === projectId);
-    if (project) {
-      document.getElementById('project-form-title-input').value = project.title;
-      document.getElementById('project-form-team').value = project.teamId;
-      document.getElementById('project-form-status').value = project.status;
-      document.getElementById('project-form-summary').value = project.summary;
-      // Populate existing positions if any
-      if (project.positions) {
+        const allowed = [
+            "application/pdf",
+            "image/jpeg", "image/png", "image/jpg",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ];
+
+        for (const file of files) {
+            const ext = file.name.split(".").pop().toLowerCase();
+            const isAllowed = allowed.includes(file.type) ||
+                              ["pdf","jpg","jpeg","png","doc","docx"].includes(ext);
+            if (!isAllowed) {
+                showToast(`Skipped "${file.name}" — unsupported format.`, "error");
+                continue;
+            }
+
+            try {
+                overlayText.textContent = `Processing "${file.name}"…`;
+
+                if (file.type === "application/pdf" || ext === "pdf") {
+                    await processPdf(file);
+                } else if (file.type.startsWith("image/") || ["jpg","jpeg","png"].includes(ext)) {
+                    await processImage(file);
+                } else if (ext === "docx" || ext === "doc") {
+                    await processDocx(file);
+                }
+            } catch (err) {
+                console.error(err);
+                showToast(`Error processing "${file.name}".`, "error");
+            }
+        }
+
+        hideOverlay();
+        renderPages();
+        showToast(`${pages.length} page${pages.length !== 1 ? "s" : ""} ready.`);
+    }
+
+    // ── PDF ──
+    async function processPdf(file) {
+        const arrayBuf = await file.arrayBuffer();
+        const pdfBytes = new Uint8Array(arrayBuf);
+        // Use a sliced copy to prevent PDF.js from detaching the arrayBuffer
+        const pdf = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+        const totalPages = pdf.numPages;
+
+        for (let i = 1; i <= totalPages; i++) {
+            overlayText.textContent = `Rendering "${file.name}" — page ${i}/${totalPages}`;
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1 });
+
+            // Render at a reasonable thumbnail size
+            const thumbScale = 300 / viewport.width;
+            const thumbVP = page.getViewport({ scale: thumbScale });
+
+            const canvas = document.createElement("canvas");
+            canvas.width  = thumbVP.width;
+            canvas.height = thumbVP.height;
+            const ctx = canvas.getContext("2d");
+            await page.render({ canvasContext: ctx, viewport: thumbVP }).promise;
+
+            pages.push({
+                id: uid(),
+                type: "pdf-page",
+                pdfBytes: pdfBytes,
+                pageIndex: i - 1,  // 0-indexed for pdf-lib
+                thumbDataUrl: canvas.toDataURL("image/jpeg", 0.8),
+                label: totalPages > 1 ? `${file.name} p.${i}` : file.name,
+                width: viewport.width,
+                height: viewport.height,
+                rotation: 0,
+                edits: []
+            });
+        }
+    }
+
+    // ── Image ──
+    async function processImage(file) {
+        const dataUrl = await readAsDataUrl(file);
+
+        // Create a small thumbnail
+        const img = new Image();
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+
+        const MAX = 400;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+            const ratio = Math.min(MAX / w, MAX / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+
+        pages.push({
+            id: uid(),
+            type: "image",
+            blob: await file.arrayBuffer(),
+            mimeType: file.type || "image/png",
+            originalWidth: img.width,
+            originalHeight: img.height,
+            thumbDataUrl: canvas.toDataURL("image/jpeg", 0.8),
+            label: file.name,
+            width: 595.28,
+            height: 841.89,
+            rotation: 0,
+            edits: []
+        });
+    }
+
+    // ── DOCX ──
+    async function processDocx(file) {
+        const arrayBuf = await file.arrayBuffer();
+        let htmlContent = "<p>DOCX document</p>";
+
         try {
-          const positions = JSON.parse(project.positions);
-          if (Array.isArray(positions)) {
-            positions.forEach(pos => {
-              createPositionInputRow(pos);
-            });
-          }
-        } catch (e) {
-          console.error("Failed to parse project positions:", e);
+            const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuf });
+            htmlContent = result.value || htmlContent;
+        } catch (err) {
+            console.warn("mammoth conversion failed", err);
+            showToast(`Partial support for "${file.name}" — DOCX preview may be limited.`, "error");
         }
-      }
-    }
-  }
-}
 
-function hideProjectForm() {
-  state.adminActiveTab = 'projects';
-  renderAdminView();
-}
+        // We need to render the DOCX HTML to an image for the PDF output
+        // Create a hidden container, render HTML, capture to canvas
+        const thumbDataUrl = await renderHtmlToThumb(htmlContent);
 
-function saveProject(event) {
-  event.preventDefault();
-  
-  const title = document.getElementById('project-form-title-input').value.trim();
-  const teamId = document.getElementById('project-form-team').value;
-  const status = document.getElementById('project-form-status').value;
-  const summary = document.getElementById('project-form-summary').value.trim();
-  
-  let details = '';
-  
-  if (title === '' || summary === '') {
-    alert('Please enter project title and brief summary!');
-    return;
-  }
-  
-  // Read dynamic positions & vacancies inputs
-  const positionCards = document.querySelectorAll('.position-input-card');
-  const positions = [];
-  positionCards.forEach(card => {
-    const titleInput = card.querySelector('.pos-title-input');
-    const countInput = card.querySelector('.pos-count-input');
-    const descriptionInput = card.querySelector('.pos-description-input');
-    
-    const sourceTextarea = card.querySelector('.pos-description-source');
-    
-    // Read dynamic requirement table fields
-    const reqRows = card.querySelectorAll('.pos-req-row');
-    const requirements = [];
-    reqRows.forEach(row => {
-      const labelInput = row.querySelector('.pos-req-label');
-      const valInput = row.querySelector('.pos-req-val');
-      if (labelInput && valInput) {
-        const label = labelInput.value.trim();
-        const value = valInput.value.trim();
-        if (label || value) {
-          requirements.push({ label, value });
-        }
-      }
-    });
-    
-    if (titleInput && countInput) {
-      const title = titleInput.value.trim();
-      const count = parseInt(countInput.value) || 0;
-      if (title && count > 0) {
-        let descContent = '';
-        if (sourceTextarea && sourceTextarea.style.display !== 'none') {
-          descContent = sourceTextarea.value.trim();
-        } else if (descriptionInput) {
-          descContent = descriptionInput.innerHTML.trim();
-        }
-        positions.push({
-          title,
-          count,
-          requirements,
-          description: descContent
+        pages.push({
+            id: uid(),
+            type: "docx",
+            htmlContent,
+            thumbDataUrl,
+            blob: arrayBuf,
+            label: file.name,
+            width: 595.28,
+            height: 841.89,
+            rotation: 0,
+            edits: []
         });
-      }
-    }
-  });
-  const positionsJSON = JSON.stringify(positions);
-  
-  let targetProject;
-  if (state.editingProjectId) {
-    const idx = state.projects.findIndex(p => p.id === state.editingProjectId);
-    if (idx !== -1) {
-      state.projects[idx] = {
-        ...state.projects[idx],
-        title,
-        teamId,
-        status,
-        summary,
-        details,
-        positions: positionsJSON,
-        updatedAt: new Date().toISOString()
-      };
-      targetProject = state.projects[idx];
-    }
-  } else {
-    const newId = 'proj-' + Date.now();
-    targetProject = {
-      id: newId,
-      teamId,
-      title,
-      status,
-      summary,
-      details,
-      positions: positionsJSON,
-      updatedAt: new Date().toISOString()
-    };
-    state.projects.push(targetProject);
-  }
-  
-  // Save database locally
-  db.saveProjects(state.projects);
-  
-  // Write back to Google Sheets if Web App URL is configured
-  if (db.getAppsScriptUrl()) {
-    triggerGoogleSheetsPush();
-  } else {
-    alert('Project saved successfully to local workspace database! Note: Connect Google Apps Script URL in Settings to sync live to your Google Sheet.');
-    hideProjectForm();
-  }
-}
-
-function deleteProject(projectId) {
-  const project = state.projects.find(p => p.id === projectId);
-  if (!project) return;
-  
-  if (confirm(`Are you sure you want to delete the project "${project.title}"? This action cannot be undone.`)) {
-    state.projects = state.projects.filter(p => p.id !== projectId);
-    db.saveProjects(state.projects);
-    
-    if (db.getAppsScriptUrl()) {
-      triggerGoogleSheetsPush();
-    } else {
-      alert('Project deleted successfully from local workspace database!');
-      renderAdminProjectsList();
-    }
-  }
-}
-
-// --- TEAM CREATE/EDIT FORM LOGIC ---
-function showTeamForm(mode, teamId = null) {
-  state.adminActiveTab = '';
-  document.querySelectorAll('.admin-menu-item').forEach(item => item.classList.remove('active'));
-  
-  document.getElementById('admin-teams-panel').style.display = 'none';
-  document.getElementById('admin-team-form-panel').style.display = 'block';
-  
-  const formTitle = document.getElementById('team-form-title');
-  
-  if (mode === 'add') {
-    state.editingTeamId = null;
-    formTitle.innerText = 'Add New Team';
-    document.getElementById('team-form-name-input').value = '';
-    document.getElementById('team-form-icon-select').value = 'fa-globe';
-    document.getElementById('team-form-desc').value = '';
-  } else {
-    state.editingTeamId = teamId;
-    formTitle.innerText = 'Edit Team';
-    
-    const team = state.teams.find(t => t.id === teamId);
-    if (team) {
-      document.getElementById('team-form-name-input').value = team.name;
-      document.getElementById('team-form-icon-select').value = team.icon || 'fa-globe';
-      document.getElementById('team-form-desc').value = team.description;
-    }
-  }
-}
-
-function hideTeamForm() {
-  state.adminActiveTab = 'teams';
-  renderAdminView();
-}
-
-function saveTeam(event) {
-  event.preventDefault();
-  
-  const name = document.getElementById('team-form-name-input').value.trim();
-  const icon = document.getElementById('team-form-icon-select').value;
-  const description = document.getElementById('team-form-desc').value.trim();
-  
-  if (name === '' || description === '') {
-    alert('Please fill out all team fields!');
-    return;
-  }
-  
-  if (state.editingTeamId) {
-    const idx = state.teams.findIndex(t => t.id === state.editingTeamId);
-    if (idx !== -1) {
-      state.teams[idx] = {
-        ...state.teams[idx],
-        name,
-        icon,
-        description
-      };
-    }
-  } else {
-    let newId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    if (!newId) newId = 'team-' + Date.now();
-    
-    if (state.teams.some(t => t.id === newId)) {
-      newId = newId + '-' + Date.now();
-    }
-    
-    state.teams.push({
-      id: newId,
-      name,
-      icon,
-      description
-    });
-  }
-  
-  db.saveTeams(state.teams);
-  
-  if (db.getAppsScriptUrl()) {
-    triggerGoogleSheetsPush();
-  } else {
-    alert('Division saved successfully to local workspace database!');
-    hideTeamForm();
-  }
-}
-
-function deleteTeam(teamId) {
-  const team = state.teams.find(t => t.id === teamId);
-  if (!team) return;
-  
-  const teamProjects = state.projects.filter(p => p.teamId === teamId);
-  if (teamProjects.length > 0) {
-    alert(`Cannot delete this team because it contains ${teamProjects.length} active project(s). You must first reassign or delete these projects.`);
-    return;
-  }
-  
-  if (confirm(`Are you sure you want to delete the team "${team.name}"?`)) {
-    state.teams = state.teams.filter(t => t.id !== teamId);
-    db.saveTeams(state.teams);
-    
-    if (db.getAppsScriptUrl()) {
-      triggerGoogleSheetsPush();
-    } else {
-      alert('Division deleted successfully from local workspace database!');
-      renderAdminTeamsList();
-    }
-  }
-}
-
-// --- SETTINGS CONTROLS & BINDINGS ---
-function populateSettingsFields() {
-  document.getElementById('settings-sheet-id').value = db.getSheetId();
-  document.getElementById('settings-script-url').value = db.getAppsScriptUrl();
-  document.getElementById('settings-auto-sync').checked = db.isSheetSyncEnabled();
-  
-  // Bind onchange settings auto saving
-  document.getElementById('settings-sheet-id').onchange = (e) => db.saveSheetId(e.target.value);
-  document.getElementById('settings-script-url').onchange = (e) => db.saveAppsScriptUrl(e.target.value);
-  document.getElementById('settings-auto-sync').onchange = (e) => db.setSheetSyncEnabled(e.target.checked);
-}
-
-function changePassword(event) {
-  event.preventDefault();
-  const currentPwd = document.getElementById('pwd-current').value;
-  const newPwd = document.getElementById('pwd-new').value;
-  const confirmPwd = document.getElementById('pwd-confirm').value;
-  const savedPwd = db.getAdminPassword();
-  
-  if (currentPwd !== savedPwd) {
-    alert('Incorrect current password!');
-    return;
-  }
-  if (newPwd.length < 5) {
-    alert('New password must be at least 5 characters long.');
-    return;
-  }
-  if (newPwd !== confirmPwd) {
-    alert('Confirm password does not match new password!');
-    return;
-  }
-  
-  db.saveAdminPassword(newPwd);
-  alert('Admin password updated successfully!');
-  document.getElementById('pwd-current').value = '';
-  document.getElementById('pwd-new').value = '';
-  document.getElementById('pwd-confirm').value = '';
-}
-
-function exportDatabase() {
-  const dataStr = db.exportData();
-  const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-  const exportFileDefaultName = `gowell_hub_backup_${new Date().toISOString().slice(0,10)}.json`;
-  
-  const linkElement = document.createElement('a');
-  linkElement.setAttribute('href', dataUri);
-  linkElement.setAttribute('download', exportFileDefaultName);
-  linkElement.click();
-}
-
-function importDatabase(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const contents = e.target.result;
-    const result = db.importData(contents);
-    
-    if (result.success) {
-      state.teams = db.getTeams();
-      state.projects = db.getProjects();
-      alert(result.message);
-      renderAdminView();
-    } else {
-      alert(result.message);
-    }
-  };
-  reader.readAsText(file);
-  event.target.value = '';
-}
-
-function resetToDefaultData() {
-  if (confirm('Are you sure you want to reset all teams, projects, and connection settings? This will wipe Google Sheets config.')) {
-    const result = db.resetToDefault();
-    state.teams = db.getTeams();
-    state.projects = db.getProjects();
-    alert(result.message);
-    renderAdminView();
-  }
-}
-
-// --- GOOGLE SHEETS SYNC CONTROLLER ---
-
-// UI loading triggers
-function showSyncOverlay(title, msg) {
-  document.getElementById('sync-title').innerText = title;
-  document.getElementById('sync-message').innerText = msg;
-  document.getElementById('sync-overlay').classList.add('active');
-}
-
-function hideSyncOverlay() {
-  document.getElementById('sync-overlay').classList.remove('active');
-}
-
-// Public triggers for UI buttons
-function syncFromGoogleSheetsBtn() {
-  const sheetId = db.getSheetId();
-  if (!sheetId) {
-    alert('Please enter a valid Google Spreadsheet ID first!');
-    return;
-  }
-  triggerGoogleSheetsSync(false);
-}
-
-function pushToGoogleSheetsBtn() {
-  const scriptUrl = db.getAppsScriptUrl();
-  if (!scriptUrl) {
-    alert('You must provide a deployed Google Apps Script Web App URL in order to save/push database changes to Google Sheets! Please see the instruction guide below.');
-    return;
-  }
-  triggerGoogleSheetsPush();
-}
-
-// Logic: Read Spreadsheet
-async function triggerGoogleSheetsSync(isAutoOnLoad = false) {
-  const sheetId = db.getSheetId();
-  if (!sheetId) return;
-
-  // Show sync overlay if it is a manual sync OR if we currently have no data loaded
-  if (!isAutoOnLoad || state.teams.length === 0 || state.projects.length === 0) {
-    showSyncOverlay('Fetching Google Sheet...', 'Downloading teams and projects lists from spreadsheet.');
-  }
-
-  try {
-    // Fetch CSV files from spreadsheet using Google Sheets Visualization API to support specific tab names by parameter
-    const teamsUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Teams`;
-    const projectsUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=Projects`;
-
-    const [teamsRes, projectsRes] = await Promise.all([
-      fetch(teamsUrl).then(r => { if (!r.ok) throw new Error('Teams fetch error'); return r.text(); }),
-      fetch(projectsUrl).then(r => { if (!r.ok) throw new Error('Projects fetch error'); return r.text(); })
-    ]);
-
-    // Parse CSV rows
-    const teamsRows = parseCSV(teamsRes);
-    const projectsRows = parseCSV(projectsRes);
-
-    if (teamsRows.length <= 1 && projectsRows.length <= 1) {
-      throw new Error('Google Sheet tabs are empty or columns are uninitialized.');
     }
 
-    // Process Teams rows: [id, name, icon, description]
-    const parsedTeams = [];
-    if (teamsRows.length > 1) {
-      const headers = teamsRows[0].map(h => h.trim().toLowerCase());
-      const idIdx = headers.indexOf('id');
-      const nameIdx = headers.indexOf('name');
-      const iconIdx = headers.indexOf('icon');
-      const descIdx = headers.indexOf('description');
+    // Render HTML string to a thumbnail image
+    async function renderHtmlToThumb(html) {
+        const container = document.createElement("div");
+        container.style.cssText = `
+            position: fixed; left: -9999px; top: 0;
+            width: 595px; min-height: 842px;
+            background: #fff; color: #111;
+            font-family: 'Inter', sans-serif; font-size: 14px;
+            padding: 40px; line-height: 1.6;
+            overflow: hidden;
+        `;
+        container.innerHTML = html;
+        document.body.appendChild(container);
 
-      if (idIdx !== -1 && nameIdx !== -1) {
-        for (let i = 1; i < teamsRows.length; i++) {
-          const row = teamsRows[i];
-          if (!row[idIdx]) continue;
-          parsedTeams.push({
-            id: row[idIdx].trim(),
-            name: row[nameIdx] ? row[nameIdx].trim() : '',
-            icon: iconIdx !== -1 && row[iconIdx] ? row[iconIdx].trim() : 'fa-globe',
-            description: descIdx !== -1 && row[descIdx] ? row[descIdx].trim() : ''
-          });
+        // Use canvas rendering
+        const canvas = document.createElement("canvas");
+        const scale = 0.5;
+        canvas.width  = 595 * scale;
+        canvas.height = 842 * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#333";
+        ctx.font = "7px Inter, sans-serif";
+
+        // Simple text extraction for thumbnail
+        const text = container.innerText || "DOCX Document";
+        const lines = text.split("\n").slice(0, 80);
+        lines.forEach((line, i) => {
+            ctx.fillText(line.substring(0, 80), 20, 20 + i * 9);
+        });
+
+        document.body.removeChild(container);
+        return canvas.toDataURL("image/jpeg", 0.75);
+    }
+
+    function readAsDataUrl(file) {
+        return new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = rej;
+            r.readAsDataURL(file);
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  PDF Creation (pdf-lib)
+    // ══════════════════════════════════════════════════════════════
+
+    // Helper to convert hex to RGB for pdf-lib
+    function hexToRgb(hex) {
+        const cleanHex = hex.replace("#", "");
+        const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+        const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+        const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+        const { rgb } = PDFLib;
+        return rgb(r, g, b);
+    }
+
+    // Helper to compress image arrayBuffer
+    async function compressImageBlob(arrayBuf, mimeType, quality, maxDim) {
+        const blob = new Blob([arrayBuf], { type: mimeType });
+        const dataUrl = await new Promise((res) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.readAsDataURL(blob);
+        });
+        
+        const img = new Image();
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUrl; });
+        
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
         }
-      }
+        
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+        return dataUrlToUint8Array(compressedDataUrl);
     }
 
-    // Process Projects rows: [id, teamid, title, status, summary, details, updatedat]
-    const parsedProjects = [];
-    if (projectsRows.length > 1) {
-      const headers = projectsRows[0].map(h => h.trim().toLowerCase());
-      const idIdx = headers.indexOf('id');
-      const teamIdIdx = headers.indexOf('teamid');
-      const titleIdx = headers.indexOf('title');
-      const statusIdx = headers.indexOf('status');
-      const summaryIdx = headers.indexOf('summary');
-      const detailsIdx = headers.indexOf('details');
-      const dateIdx = headers.indexOf('updatedat');
-      const positionsIdx = headers.indexOf('positions');
+    // Helper to rasterize PDF page for compression
+    async function rasterizePdfPage(pdfBytes, pageIndex, quality, scale) {
+        const pdf = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+        const page = await pdf.getPage(pageIndex + 1);
+        const viewport = page.getViewport({ scale: scale });
+        
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+        
+        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+        const imgDataUrl = canvas.toDataURL("image/jpeg", quality);
+        return dataUrlToUint8Array(imgDataUrl);
+    }
 
-      if (idIdx !== -1 && titleIdx !== -1) {
-        for (let i = 1; i < projectsRows.length; i++) {
-          const row = projectsRows[i];
-          if (!row[idIdx]) continue;
-          parsedProjects.push({
-            id: row[idIdx].trim(),
-            teamId: teamIdIdx !== -1 && row[teamIdIdx] ? row[teamIdIdx].trim() : '',
-            title: row[titleIdx] ? row[titleIdx].trim() : '',
-            status: statusIdx !== -1 && row[statusIdx] ? row[statusIdx].trim().toLowerCase() : 'ongoing',
-            summary: summaryIdx !== -1 && row[summaryIdx] ? row[summaryIdx].trim() : '',
-            details: detailsIdx !== -1 && row[detailsIdx] ? row[detailsIdx].trim() : '',
-            updatedAt: dateIdx !== -1 && row[dateIdx] ? row[dateIdx].trim() : new Date().toISOString(),
-            positions: positionsIdx !== -1 && row[positionsIdx] ? row[positionsIdx].trim() : ''
-          });
+    // Helper to apply edits and rotation to a page
+    async function applyEditsAndRotation(page, p, mergedPdf, fontCache) {
+        const { degrees, StandardFonts, rgb } = PDFLib;
+        const W = page.getWidth();
+        const H = page.getHeight();
+
+        // 1. Apply Edits
+        if (p.edits && p.edits.length > 0) {
+            for (const edit of p.edits) {
+                const x = (edit.x_pct / 100) * W;
+                const y_top = (edit.y_pct / 100) * H;
+                
+                if (edit.type === "shape") {
+                    const w = (edit.w_pct / 100) * W;
+                    const h = (edit.h_pct / 100) * H;
+                    const pdf_x = x;
+                    const pdf_y = H - y_top - h;
+                    
+                    let fillCol = rgb(1, 1, 1); // white
+                    let opacity = 1.0;
+                    
+                    if (edit.fillType === "black") {
+                        fillCol = rgb(0, 0, 0);
+                    } else if (edit.fillType === "highlight") {
+                        fillCol = rgb(1, 1, 0);
+                        opacity = 0.45;
+                    }
+                    
+                    page.drawRectangle({
+                        x: pdf_x,
+                        y: pdf_y,
+                        width: w,
+                        height: h,
+                        color: fillCol,
+                        opacity: opacity,
+                    });
+                } else if (edit.type === "text") {
+                    let fontName = StandardFonts.Helvetica;
+                    if (edit.fontFamily === "TimesRoman") fontName = StandardFonts.TimesRoman;
+                    if (edit.fontFamily === "Courier") fontName = StandardFonts.Courier;
+                    
+                    if (!fontCache[fontName]) {
+                        fontCache[fontName] = await mergedPdf.embedFont(fontName);
+                    }
+                    const embeddedFont = fontCache[fontName];
+                    const textCol = hexToRgb(edit.color || "#000000");
+                    
+                    // Scale font size from HTML editor dimensions to PDF points
+                    const workspaceHeight = p.editWorkspaceHeight || 600;
+                    const pdf_font_size = (edit.fontSize / workspaceHeight) * H;
+                    
+                    const lines = edit.text.split("\n");
+                    const lineHeight = pdf_font_size * 1.25;
+                    
+                    const pdf_x = x;
+                    const start_pdf_y = H - y_top - pdf_font_size;
+                    
+                    for (let l = 0; l < lines.length; l++) {
+                        page.drawText(lines[l], {
+                            x: pdf_x,
+                            y: start_pdf_y - l * lineHeight,
+                            size: pdf_font_size,
+                            font: embeddedFont,
+                            color: textCol,
+                        });
+                    }
+                }
+            }
         }
-      }
-    }
 
-    // If both synced successfully and contain data, overwrite local database
-    if (parsedTeams.length > 0) {
-      state.teams = parsedTeams;
-      db.saveTeams(parsedTeams);
-    }
-    if (parsedProjects.length > 0) {
-      state.projects = parsedProjects;
-      db.saveProjects(parsedProjects);
-    }
-
-    // Re-render
-    renderApp();
-    
-    // Always hide sync overlay when finished fetching
-    hideSyncOverlay();
-    
-    if (!isAutoOnLoad) {
-      alert(`Synchronized with Google Sheets successfully!\nDownloaded: ${state.teams.length} Divisions and ${state.projects.length} Projects.`);
-    }
-  } catch (err) {
-    console.error('Google Sheet synchronization failed:', err);
-    hideSyncOverlay(); // Always hide sync overlay on error
-    if (!isAutoOnLoad) {
-      alert('Google Sheets Sync Failed!\n\nCheck if:\n1. Your Spreadsheet ID is correct.\n2. The spreadsheet sharing is set to "Anyone with the link can view".\n3. The spreadsheet has tabs named exactly "Teams" and "Projects".\n\nFalling back to locally cached offline database.');
-    }
-  }
-}
-
-// Logic: Write back changes using Apps Script Web App
-async function triggerGoogleSheetsPush() {
-  const scriptUrl = db.getAppsScriptUrl();
-  if (!scriptUrl) return;
-
-  showSyncOverlay('Syncing Google Sheet...', 'Uploading and saving changes to your spreadsheet backend.');
-
-  try {
-    const payload = {
-      action: 'pushAll',
-      teams: state.teams,
-      projects: state.projects
-    };
-
-    // Make POST request to the Apps Script Web App URL
-    // We send payload as raw text and avoid pre-flight CORS precheck conflicts using plain postData
-    const response = await fetch(scriptUrl, {
-      method: 'POST',
-      mode: 'cors',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      throw new Error('Server response error');
-    }
-
-    const data = await response.json();
-    hideSyncOverlay();
-    
-    if (data.success) {
-      alert('Spreadsheet synchronized successfully! All changes are now live on your Google Sheet.');
-      // Return to admin views
-      if (state.currentView === 'admin') {
-        if (state.editingProjectId || state.editingTeamId) {
-          hideProjectForm();
-          hideTeamForm();
-        } else {
-          renderAdminView();
+        // 2. Apply Rotation
+        if (p.rotation) {
+            let currentRotation = 0;
+            try {
+                currentRotation = page.getRotation().angle;
+            } catch (e) {}
+            page.setRotation(degrees((currentRotation + p.rotation) % 360));
         }
-      }
-    } else {
-      alert('Apps Script reported error: ' + data.message);
     }
-  } catch (err) {
-    console.error('Failed to sync to Google Sheet:', err);
-    hideSyncOverlay();
-    alert('Failed to save to Google Sheet!\n\nVerify that:\n1. The Google Apps Script is deployed as a Web App.\n2. Access permission is set to "Anyone" (even anonymous).\n3. You copied the correct Web App Deployment URL.\n\nChanges have been saved locally in your browser cache, but are not live in the Google Sheet yet.');
-  }
-}
 
-// Custom CSV Parser that handles double quotes, commas, and multiline values
-function parseCSV(text) {
-  const lines = [];
-  let currentLine = [];
-  let currentVal = '';
-  let inQuotes = false;
-  
-  if (!text) return [];
+    async function makePdf() {
+        if (!pages.length) return;
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const nextChar = text[i + 1];
-    
-    if (inQuotes) {
-      if (char === '"') {
-        if (nextChar === '"') {
-          currentVal += '"';
-          i++; // skip next quote
-        } else {
-          inQuotes = false;
+        const filename = (filenameInput.value.trim() || "my-document") + ".pdf";
+        showOverlay("Building your PDF…");
+
+        try {
+            const { PDFDocument } = PDFLib;
+            const mergedPdf = await PDFDocument.create();
+            const fontCache = {};
+            const compressionLevel = compressionSelect.value; // 'none', 'medium', 'high'
+
+            for (let i = 0; i < pages.length; i++) {
+                const p = pages[i];
+                overlayText.textContent = `Processing page ${i + 1} of ${pages.length}…`;
+
+                if (p.type === "pdf-page") {
+                    if (compressionLevel === "none") {
+                        const srcDoc = await PDFDocument.load(p.pdfBytes);
+                        const [copiedPage] = await mergedPdf.copyPages(srcDoc, [p.pageIndex]);
+                        await applyEditsAndRotation(copiedPage, p, mergedPdf, fontCache);
+                        mergedPdf.addPage(copiedPage);
+                    } else {
+                        // Compress by rasterizing PDF page to compressed JPEG
+                        const scale = compressionLevel === "medium" ? 1.8 : 1.1;
+                        const quality = compressionLevel === "medium" ? 0.75 : 0.50;
+                        const imgBytes = await rasterizePdfPage(p.pdfBytes, p.pageIndex, quality, scale);
+                        const embeddedImg = await mergedPdf.embedJpg(imgBytes);
+                        
+                        const page = mergedPdf.addPage([p.width, p.height]);
+                        page.drawImage(embeddedImg, {
+                            x: 0,
+                            y: 0,
+                            width: p.width,
+                            height: p.height,
+                        });
+                        await applyEditsAndRotation(page, p, mergedPdf, fontCache);
+                    }
+
+                } else if (p.type === "image") {
+                    let embeddedImg;
+                    let bytes;
+                    
+                    if (compressionLevel === "none") {
+                        bytes = new Uint8Array(p.blob);
+                        if (p.mimeType === "image/png") {
+                            embeddedImg = await mergedPdf.embedPng(bytes);
+                        } else {
+                            embeddedImg = await mergedPdf.embedJpg(bytes);
+                        }
+                    } else {
+                        // Compress image quality and downscale if too large
+                        const quality = compressionLevel === "medium" ? 0.75 : 0.50;
+                        const maxDim = compressionLevel === "medium" ? 1200 : 800;
+                        bytes = await compressImageBlob(p.blob, p.mimeType, quality, maxDim);
+                        embeddedImg = await mergedPdf.embedJpg(bytes);
+                    }
+
+                    // Fit image to A4 with padding
+                    const A4_W = 595.28, A4_H = 841.89;
+                    const PAD = 36;
+                    const maxW = A4_W - PAD * 2;
+                    const maxH = A4_H - PAD * 2;
+                    const imgW = embeddedImg.width;
+                    const imgH = embeddedImg.height;
+                    const ratio = Math.min(maxW / imgW, maxH / imgH, 1);
+                    const drawW = imgW * ratio;
+                    const drawH = imgH * ratio;
+
+                    const page = mergedPdf.addPage([A4_W, A4_H]);
+                    page.drawImage(embeddedImg, {
+                        x: (A4_W - drawW) / 2,
+                        y: (A4_H - drawH) / 2,
+                        width: drawW,
+                        height: drawH,
+                    });
+                    
+                    await applyEditsAndRotation(page, p, mergedPdf, fontCache);
+
+                } else if (p.type === "docx") {
+                    // Render DOCX HTML to canvas with appropriate compression
+                    const quality = compressionLevel === "none" ? 0.9 : (compressionLevel === "medium" ? 0.75 : 0.50);
+                    const imgDataUrl = await renderDocxToFullImage(p.htmlContent, quality);
+                    const imgBytes = dataUrlToUint8Array(imgDataUrl);
+                    const embeddedImg = await mergedPdf.embedJpg(imgBytes);
+
+                    const A4_W = 595.28, A4_H = 841.89;
+                    const page = mergedPdf.addPage([A4_W, A4_H]);
+                    page.drawImage(embeddedImg, {
+                        x: 0, y: 0,
+                        width: A4_W,
+                        height: A4_H,
+                    });
+                    
+                    await applyEditsAndRotation(page, p, mergedPdf, fontCache);
+                }
+            }
+
+            const pdfBytes = await mergedPdf.save();
+            downloadBlob(pdfBytes, filename, "application/pdf");
+            showToast(`"${filename}" downloaded!`);
+            
+            // Clear all pages and reset upload state
+            pages = [];
+            renderPages();
+            updateUI();
+        } catch (err) {
+            console.error(err);
+            showToast("Error creating PDF. Check console for details.", "error");
         }
-      } else {
-        currentVal += char;
-      }
-    } else {
-      if (char === '"') {
-        inQuotes = true;
-      } else if (char === ',') {
-        currentLine.push(currentVal);
-        currentVal = '';
-      } else if (char === '\n' || char === '\r') {
-        currentLine.push(currentVal);
-        lines.push(currentLine);
-        currentLine = [];
-        currentVal = '';
-        if (char === '\r' && nextChar === '\n') {
-          i++; // skip LF
+
+        hideOverlay();
+    }
+
+    async function renderDocxToFullImage(html, quality = 0.9) {
+        const container = document.createElement("div");
+        container.style.cssText = `
+            position: fixed; left: -9999px; top: 0;
+            width: 595px; min-height: 842px;
+            background: #fff; color: #111;
+            font-family: 'Inter', sans-serif; font-size: 13px;
+            padding: 50px; line-height: 1.7;
+            overflow: hidden;
+        `;
+        container.innerHTML = html;
+        document.body.appendChild(container);
+
+        // Render to canvas manually (simpler than html2canvas dependency)
+        const canvas = document.createElement("canvas");
+        canvas.width = 595 * 2;
+        canvas.height = 842 * 2;
+        const ctx = canvas.getContext("2d");
+        ctx.scale(2, 2);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, 595, 842);
+        ctx.fillStyle = "#111";
+        ctx.font = "13px Inter, sans-serif";
+
+        const text = container.innerText || "";
+        const words = text.split(/\s+/);
+        const maxWidth = 495; // 595 - 2*50 padding
+        let line = "";
+        let y = 60;
+        const lineHeight = 20;
+
+        for (const word of words) {
+            const test = line + (line ? " " : "") + word;
+            if (ctx.measureText(test).width > maxWidth) {
+                ctx.fillText(line, 50, y);
+                line = word;
+                y += lineHeight;
+                if (y > 800) break;
+            } else {
+                line = test;
+            }
         }
-      } else {
-        currentVal += char;
-      }
+        if (line && y <= 800) ctx.fillText(line, 50, y);
+
+        document.body.removeChild(container);
+        return canvas.toDataURL("image/jpeg", quality);
     }
-  }
-  
-  // Capture residual values
-  if (currentVal || currentLine.length > 0) {
-    currentLine.push(currentVal);
-    lines.push(currentLine);
-  }
-  
-  return lines;
-}
 
-// --- WYSIWYG RICH TEXT EDITOR ENGINE ---
-let sourceMode = false;
-
-function initEditorState() {
-  sourceMode = false;
-  const canvas = document.getElementById('editor-canvas');
-  const sourceTextarea = document.getElementById('editor-html-source');
-  const sourceBtn = document.getElementById('editor-btn-source');
-  
-  canvas.style.display = 'block';
-  sourceTextarea.style.display = 'none';
-  sourceBtn.classList.remove('active');
-  
-  canvas.addEventListener('keyup', updateToolbarStates);
-  canvas.addEventListener('mouseup', updateToolbarStates);
-  
-  // Initialize the history stack with current content
-  historyState.init(canvas.innerHTML);
-  
-  canvas.focus();
-}
-
-function updateToolbarStates() {
-  const formats = ['bold', 'italic', 'underline', 'insertUnorderedList', 'insertOrderedList'];
-  formats.forEach(cmd => {
-    const btn = document.getElementById(`editor-btn-${cmd}`);
-    if (btn) {
-      if (document.queryCommandState(cmd)) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
+    function dataUrlToUint8Array(dataUrl) {
+        const base64 = dataUrl.split(",")[1];
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
     }
-  });
-}
 
-function execEditorCommand(command, value = null) {
-  if (sourceMode) return;
-  
-  document.execCommand(command, false, value);
-  const canvas = document.getElementById('editor-canvas');
-  canvas.focus();
-  updateToolbarStates();
-  
-  historyState.save(canvas.innerHTML);
-}
-
-function toggleSourceMode() {
-  const canvas = document.getElementById('editor-canvas');
-  const sourceTextarea = document.getElementById('editor-html-source');
-  const sourceBtn = document.getElementById('editor-btn-source');
-  
-  sourceMode = !sourceMode;
-  
-  if (sourceMode) {
-    sourceTextarea.value = canvas.innerHTML;
-    canvas.style.display = 'none';
-    sourceTextarea.style.display = 'block';
-    sourceBtn.classList.add('active');
-    
-    document.querySelectorAll('.editor-toolbar button:not(#editor-btn-source):not(#editor-btn-undo):not(#editor-btn-redo)').forEach(btn => {
-      btn.style.opacity = '0.5';
-      btn.style.pointerEvents = 'none';
-    });
-    document.querySelectorAll('.editor-toolbar select').forEach(select => {
-      select.disabled = true;
-    });
-  } else {
-    canvas.innerHTML = sourceTextarea.value;
-    sourceTextarea.style.display = 'none';
-    canvas.style.display = 'block';
-    sourceBtn.classList.remove('active');
-    
-    document.querySelectorAll('.editor-toolbar button:not(#editor-btn-source):not(#editor-btn-undo):not(#editor-btn-redo)').forEach(btn => {
-      btn.style.opacity = '1';
-      btn.style.pointerEvents = 'auto';
-    });
-    document.querySelectorAll('.editor-toolbar select').forEach(select => {
-      select.disabled = false;
-    });
-    
-    // Save history when returning from source view
-    historyState.save(canvas.innerHTML);
-    canvas.focus();
-  }
-}
-
-// Zebra table insertion function
-function openTableCreator() {
-  if (sourceMode) return;
-  const dialog = document.getElementById('table-creator-dialog');
-  dialog.classList.add('active');
-  document.getElementById('table-rows').value = '3';
-  document.getElementById('table-cols').value = '3';
-  document.getElementById('table-rows').focus();
-}
-
-function closeTableCreator() {
-  const dialog = document.getElementById('table-creator-dialog');
-  dialog.classList.remove('active');
-}
-
-function confirmTableCreation() {
-  const rows = parseInt(document.getElementById('table-rows').value) || 2;
-  const cols = parseInt(document.getElementById('table-cols').value) || 2;
-  
-  closeTableCreator();
-  if (typeof currentCardForTable !== 'undefined' && currentCardForTable) {
-    insertZebraTableForCard(currentCardForTable, rows, cols);
-    currentCardForTable = null;
-  } else {
-    insertZebraTable(rows, cols);
-  }
-}
-
-function insertZebraTable(rows, cols) {
-  const canvas = document.getElementById('editor-canvas');
-  canvas.focus();
-  
-  let tableHTML = '<table class="gowell-striped-table" style="width: 100%; border-collapse: collapse; margin: 15px 0;">';
-  tableHTML += '<thead><tr>';
-  for (let c = 1; c <= cols; c++) {
-    tableHTML += `<th>Heading ${c}</th>`;
-  }
-  tableHTML += '</tr></thead>';
-  tableHTML += '<tbody>';
-  for (let r = 1; r <= rows; r++) {
-    tableHTML += '<tr>';
-    for (let c = 1; c <= cols; c++) {
-      tableHTML += `<td>Cell Row ${r} - Col ${c}</td>`;
+    function downloadBlob(data, filename, type) {
+        const blob = new Blob([data], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
-    tableHTML += '</tr>';
-  }
-  tableHTML += '</tbody></table><p><br></p>';
-  
-  const selection = window.getSelection();
-  if (selection.getRangeAt && selection.rangeCount) {
-    const range = selection.getRangeAt(0);
-    if (canvas.contains(range.commonAncestorContainer)) {
-      range.deleteContents();
-      
-      const el = document.createElement("div");
-      el.innerHTML = tableHTML;
-      const frag = document.createDocumentFragment();
-      let node, lastNode;
-      while ((node = el.firstChild)) {
-        lastNode = frag.appendChild(node);
-      }
-      range.insertNode(frag);
-      
-      if (lastNode) {
-        range.setStartAfter(lastNode);
-        range.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    } else {
-      canvas.innerHTML += tableHTML;
-    }
-  } else {
-    canvas.innerHTML += tableHTML;
-  }
-  
-  // Save history on new table creation
-  historyState.save(canvas.innerHTML);
-}
 
-// --- GLOBAL BINDINGS ---
-function bindGlobalEvents() {
-  const themeBtn = document.getElementById('theme-toggle');
-  if (themeBtn) {
-    themeBtn.onclick = () => {
-      setTheme(state.theme === 'dark' ? 'light' : 'dark');
-    };
-  }
-  
-  const closeModalBtn = document.getElementById('close-modal-btn');
-  if (closeModalBtn) {
-    closeModalBtn.onclick = closeProjectModal;
-  }
-  
-  const modalOverlay = document.getElementById('project-detail-modal');
-  if (modalOverlay) {
-    modalOverlay.onclick = (e) => {
-      if (e.target === modalOverlay) closeProjectModal();
-    };
-  }
-  
-  const tableOverlay = document.getElementById('table-creator-dialog');
-  if (tableOverlay) {
-    tableOverlay.onclick = (e) => {
-      if (e.target === tableOverlay) closeTableCreator();
-    };
-  }
-  
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeProjectModal();
-      closeTableCreator();
-    }
-  });
+    // ══════════════════════════════════════════════════════════════
+    //  Page Preview Viewer Modal
+    // ══════════════════════════════════════════════════════════════
 
-  // Bind Editor History Events
-  const canvas = document.getElementById('editor-canvas');
-  const sourceTextarea = document.getElementById('editor-html-source');
-  
-  if (canvas && sourceTextarea) {
-    let inputTimeout = null;
-    
-    // Save history on input changes with debounce
-    canvas.addEventListener('input', () => {
-      if (inputTimeout) clearTimeout(inputTimeout);
-      inputTimeout = setTimeout(() => {
-        historyState.save(canvas.innerHTML);
-      }, 500);
+    function updateViewerTransform() {
+        viewerCanvasContainer.style.transform = `translate(${viewerPanX}px, ${viewerPanY}px) scale(${viewerZoom})`;
+        viewerZoomLevel.textContent = `${Math.round(viewerZoom * 100)}%`;
+    }
+
+    function resetViewerZoomPan() {
+        viewerZoom = 1.0;
+        viewerPanX = 0;
+        viewerPanY = 0;
+        updateViewerTransform();
+    }
+
+    async function openViewer(pageId) {
+        const p = pages.find(page => page.id === pageId);
+        if (!p) return;
+
+        viewerActivePageId = pageId;
+        viewerModal.classList.remove("hidden");
+        await renderViewerPage(p);
+    }
+
+    async function renderViewerPage(p) {
+        resetViewerZoomPan();
+        viewerPageLabel.textContent = p.label;
+        viewerOverlaysLayer.innerHTML = "";
+        
+        // Clean previous background content (keep overlays layer)
+        Array.from(viewerCanvasContainer.children).forEach(child => {
+            if (child.id !== "viewer-overlays-layer") child.remove();
+        });
+
+        // Set up container size based on page aspect ratio
+        const aspect = p.width / p.height;
+        const workspaceHeight = Math.min(window.innerHeight * 0.7, 700);
+        const workspaceWidth = workspaceHeight * aspect;
+        
+        viewerCanvasContainer.style.height = `${workspaceHeight}px`;
+        viewerCanvasContainer.style.width = `${workspaceWidth}px`;
+
+        // Apply rotation class to container
+        viewerCanvasContainer.className = "viewer-canvas-container";
+        if (p.rotation) {
+            viewerCanvasContainer.classList.add(`rotate-${p.rotation}`);
+        }
+
+        showOverlay("Loading page preview…");
+
+        try {
+            if (p.type === "pdf-page") {
+                const pdf = await pdfjsLib.getDocument({ data: p.pdfBytes.slice(0) }).promise;
+                const page = await pdf.getPage(p.pageIndex + 1);
+                
+                const canvas = document.createElement("canvas");
+                // Render at a high scale for the viewer modal to be crisp
+                const scale = (workspaceHeight * window.devicePixelRatio) / p.height;
+                const viewport = page.getViewport({ scale: scale });
+                
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                const ctx = canvas.getContext("2d");
+                
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                
+                canvas.style.width = "100%";
+                canvas.style.height = "100%";
+                viewerCanvasContainer.insertBefore(canvas, viewerOverlaysLayer);
+                
+            } else if (p.type === "image") {
+                const img = document.createElement("img");
+                // Construct a high-resolution blob URL from the original file bytes
+                if (p.blob) {
+                    const blobUrl = URL.createObjectURL(new Blob([p.blob], { type: p.mimeType }));
+                    img.src = blobUrl;
+                    img.onload = () => URL.revokeObjectURL(blobUrl);
+                } else {
+                    img.src = p.thumbDataUrl;
+                }
+                img.style.width = "100%";
+                img.style.height = "100%";
+                viewerCanvasContainer.insertBefore(img, viewerOverlaysLayer);
+                
+            } else if (p.type === "docx") {
+                const div = document.createElement("div");
+                div.className = "docx-preview";
+                div.innerHTML = p.htmlContent || "<p>DOCX Document</p>";
+                div.style.width = "100%";
+                div.style.height = "100%";
+                viewerCanvasContainer.insertBefore(div, viewerOverlaysLayer);
+            }
+
+            // Render existing edits in read-only mode
+            if (p.edits && p.edits.length > 0) {
+                p.edits.forEach(edit => {
+                    const el = document.createElement("div");
+                    el.className = `editor-overlay-item type-${edit.type}`;
+                    el.style.left = `${edit.x_pct}%`;
+                    el.style.top = `${edit.y_pct}%`;
+                    el.style.width = edit.w_pct ? `${edit.w_pct}%` : "auto";
+                    el.style.height = edit.h_pct ? `${edit.h_pct}%` : "auto";
+                    
+                    if (edit.type === "text") {
+                        el.textContent = edit.text || "";
+                        el.style.fontSize = `${edit.fontSize}px`;
+                        el.style.fontFamily = getFontFamilyCss(edit.fontFamily);
+                        el.style.color = edit.color;
+                    } else if (edit.type === "shape") {
+                        el.classList.add(`shape-${edit.fillType}`);
+                    }
+                    viewerOverlaysLayer.appendChild(el);
+                });
+            }
+
+            // Update footer pagination controls
+            const currentIndex = pages.findIndex(page => page.id === p.id);
+            viewerPageCounter.textContent = `Page ${currentIndex + 1} of ${pages.length}`;
+            
+            // Disable/enable prev/next buttons
+            viewerBtnPrev.disabled = currentIndex === 0;
+            viewerBtnNext.disabled = currentIndex === pages.length - 1;
+
+        } catch (err) {
+            console.error(err);
+            showToast("Failed to load page preview.", "error");
+        } finally {
+            hideOverlay();
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Page Text & Overlay Editor Modal
+    // ══════════════════════════════════════════════════════════════
+
+    function getFontFamilyCss(fontFamily) {
+        if (fontFamily === "TimesRoman") return "'Times New Roman', Times, serif";
+        if (fontFamily === "Courier") return "'Courier New', Courier, monospace";
+        return "Inter, Helvetica, sans-serif";
+    }
+
+    async function openEditor(pageId) {
+        const p = pages.find(page => page.id === pageId);
+        if (!p) return;
+        
+        activePage = p;
+        activeElement = null;
+        
+        editorPageLabel.textContent = p.label;
+        editorOverlaysLayer.innerHTML = "";
+        editorPropertiesPanel.classList.add("hidden");
+        editorNoSelection.classList.remove("hidden");
+        
+        showOverlay("Loading page editor…");
+        
+        try {
+            const aspect = p.width / p.height;
+            const workspaceHeight = Math.min(window.innerHeight * 0.65, 600);
+            const workspaceWidth = workspaceHeight * aspect;
+            
+            editorCanvasContainer.style.height = `${workspaceHeight}px`;
+            editorCanvasContainer.style.width = `${workspaceWidth}px`;
+            
+            // Clean previous background content (keep overlays layer)
+            Array.from(editorCanvasContainer.children).forEach(child => {
+                if (child.id !== "editor-overlays-layer") child.remove();
+            });
+            
+            // Store workspace height on page for scaling edits on compile
+            p.editWorkspaceHeight = workspaceHeight;
+            
+            if (p.type === "pdf-page") {
+                const pdf = await pdfjsLib.getDocument({ data: p.pdfBytes.slice(0) }).promise;
+                const page = await pdf.getPage(p.pageIndex + 1);
+                
+                const canvas = document.createElement("canvas");
+                const scale = (workspaceHeight * window.devicePixelRatio) / p.height;
+                const viewport = page.getViewport({ scale: scale });
+                
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                const ctx = canvas.getContext("2d");
+                
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                
+                canvas.style.width = "100%";
+                canvas.style.height = "100%";
+                editorCanvasContainer.insertBefore(canvas, editorOverlaysLayer);
+                
+            } else if (p.type === "image") {
+                const img = document.createElement("img");
+                img.src = p.thumbDataUrl;
+                img.style.width = "100%";
+                img.style.height = "100%";
+                editorCanvasContainer.insertBefore(img, editorOverlaysLayer);
+                
+            } else if (p.type === "docx") {
+                const div = document.createElement("div");
+                div.className = "docx-preview";
+                div.innerHTML = p.htmlContent || "<p>DOCX Document</p>";
+                div.style.width = "100%";
+                div.style.height = "100%";
+                editorCanvasContainer.insertBefore(div, editorOverlaysLayer);
+            }
+            
+            // Render existing edits
+            if (!activePage.edits) activePage.edits = [];
+            activePage.edits.forEach(edit => renderEditElement(edit));
+            
+            editorModal.classList.remove("hidden");
+        } catch (err) {
+            console.error(err);
+            showToast("Failed to load editor.", "error");
+        } finally {
+            hideOverlay();
+        }
+    }
+
+    function renderEditElement(edit) {
+        const el = document.createElement("div");
+        el.className = `editor-overlay-item type-${edit.type}`;
+        el.dataset.id = edit.id;
+        
+        el.style.left = `${edit.x_pct}%`;
+        el.style.top = `${edit.y_pct}%`;
+        el.style.width = edit.w_pct ? `${edit.w_pct}%` : "auto";
+        el.style.height = edit.h_pct ? `${edit.h_pct}%` : "auto";
+        
+        if (edit.type === "text") {
+            el.textContent = edit.text || "Double click to edit";
+            el.style.fontSize = `${edit.fontSize}px`;
+            el.style.fontFamily = getFontFamilyCss(edit.fontFamily);
+            el.style.color = edit.color;
+        } else if (edit.type === "shape") {
+            el.classList.add(`shape-${edit.fillType}`);
+            
+            const handle = document.createElement("div");
+            handle.className = "resize-handle";
+            el.appendChild(handle);
+        }
+        
+        setupInteractiveElement(el, edit);
+        editorOverlaysLayer.appendChild(el);
+    }
+
+    function setupInteractiveElement(el, edit) {
+        // Selection on click/mousedown
+        el.addEventListener("mousedown", (e) => {
+            if (e.target.classList.contains("resize-handle")) return;
+            e.stopPropagation();
+            selectElement(edit, el);
+            
+            // Dragging
+            const containerRect = editorCanvasContainer.getBoundingClientRect();
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const startLeft = el.offsetLeft;
+            const startTop = el.offsetTop;
+            
+            function onMouseMove(moveEvt) {
+                const deltaX = moveEvt.clientX - startX;
+                const deltaY = moveEvt.clientY - startY;
+                
+                let newLeft = startLeft + deltaX;
+                let newTop = startTop + deltaY;
+                
+                newLeft = Math.max(0, Math.min(newLeft, containerRect.width - el.offsetWidth));
+                newTop = Math.max(0, Math.min(newTop, containerRect.height - el.offsetHeight));
+                
+                el.style.left = `${newLeft}px`;
+                el.style.top = `${newTop}px`;
+                
+                edit.x_pct = (newLeft / containerRect.width) * 100;
+                edit.y_pct = (newTop / containerRect.height) * 100;
+            }
+            
+            function onMouseUp() {
+                document.removeEventListener("mousemove", onMouseMove);
+                document.removeEventListener("mouseup", onMouseUp);
+            }
+            
+            document.addEventListener("mousemove", onMouseMove);
+            document.addEventListener("mouseup", onMouseUp);
+        });
+
+        // Touch support for dragging
+        el.addEventListener("touchstart", (e) => {
+            if (e.target.classList.contains("resize-handle")) return;
+            e.stopPropagation();
+            selectElement(edit, el);
+            
+            const touch = e.touches[0];
+            const containerRect = editorCanvasContainer.getBoundingClientRect();
+            const startX = touch.clientX;
+            const startY = touch.clientY;
+            const startLeft = el.offsetLeft;
+            const startTop = el.offsetTop;
+            
+            function onTouchMove(moveEvt) {
+                const moveTouch = moveEvt.touches[0];
+                const deltaX = moveTouch.clientX - startX;
+                const deltaY = moveTouch.clientY - startY;
+                
+                let newLeft = startLeft + deltaX;
+                let newTop = startTop + deltaY;
+                
+                newLeft = Math.max(0, Math.min(newLeft, containerRect.width - el.offsetWidth));
+                newTop = Math.max(0, Math.min(newTop, containerRect.height - el.offsetHeight));
+                
+                el.style.left = `${newLeft}px`;
+                el.style.top = `${newTop}px`;
+                
+                edit.x_pct = (newLeft / containerRect.width) * 100;
+                edit.y_pct = (newTop / containerRect.height) * 100;
+            }
+            
+            function onTouchEnd() {
+                document.removeEventListener("touchmove", onTouchMove);
+                document.removeEventListener("touchend", onTouchEnd);
+            }
+            
+            document.addEventListener("touchmove", onTouchMove, { passive: true });
+            document.addEventListener("touchend", onTouchEnd);
+        });
+        
+        // Shape resizer
+        if (edit.type === "shape") {
+            const handle = el.querySelector(".resize-handle");
+            
+            const startResize = (clientX, clientY) => {
+                const containerRect = editorCanvasContainer.getBoundingClientRect();
+                const startWidth = el.offsetWidth;
+                const startHeight = el.offsetHeight;
+                const startX = clientX;
+                const startY = clientY;
+                
+                const onResizeMove = (moveEvt) => {
+                    const currentX = moveEvt.touches ? moveEvt.touches[0].clientX : moveEvt.clientX;
+                    const currentY = moveEvt.touches ? moveEvt.touches[0].clientY : moveEvt.clientY;
+                    
+                    const deltaX = currentX - startX;
+                    const deltaY = currentY - startY;
+                    
+                    let newWidth = startWidth + deltaX;
+                    let newHeight = startHeight + deltaY;
+                    
+                    newWidth = Math.max(15, Math.min(newWidth, containerRect.width - el.offsetLeft));
+                    newHeight = Math.max(15, Math.min(newHeight, containerRect.height - el.offsetTop));
+                    
+                    el.style.width = `${newWidth}px`;
+                    el.style.height = `${newHeight}px`;
+                    
+                    edit.w_pct = (newWidth / containerRect.width) * 100;
+                    edit.h_pct = (newHeight / containerRect.height) * 100;
+                };
+                
+                const onResizeUp = () => {
+                    document.removeEventListener("mousemove", onResizeMove);
+                    document.removeEventListener("mouseup", onResizeUp);
+                    document.removeEventListener("touchmove", onResizeMove);
+                    document.removeEventListener("touchend", onResizeUp);
+                };
+                
+                document.addEventListener("mousemove", onResizeMove);
+                document.addEventListener("mouseup", onResizeUp);
+                document.addEventListener("touchmove", onResizeMove, { passive: true });
+                document.addEventListener("touchend", onResizeUp);
+            };
+            
+            handle.addEventListener("mousedown", (e) => {
+                e.stopPropagation();
+                startResize(e.clientX, e.clientY);
+            });
+            
+            handle.addEventListener("touchstart", (e) => {
+                e.stopPropagation();
+                const touch = e.touches[0];
+                startResize(touch.clientX, touch.clientY);
+            }, { passive: true });
+        }
+    }
+
+    function selectElement(edit, el) {
+        activeElement = edit;
+        
+        editorOverlaysLayer.querySelectorAll(".editor-overlay-item").forEach(item => {
+            item.classList.remove("selected");
+        });
+        el.classList.add("selected");
+        
+        editorNoSelection.classList.add("hidden");
+        editorPropertiesPanel.classList.remove("hidden");
+        
+        if (edit.type === "text") {
+            propTextGroup.classList.remove("hidden");
+            propShapeGroup.classList.add("hidden");
+            
+            propTextInput.value = edit.text || "";
+            propFontFamily.value = edit.fontFamily || "Helvetica";
+            propFontSize.value = edit.fontSize || 16;
+            propFontSizeVal.textContent = edit.fontSize || 16;
+            
+            colorSwatches.forEach(swatch => {
+                if (swatch.dataset.color === edit.color) {
+                    swatch.classList.add("active");
+                } else {
+                    swatch.classList.remove("active");
+                }
+            });
+        } else if (edit.type === "shape") {
+            propTextGroup.classList.add("hidden");
+            propShapeGroup.classList.remove("hidden");
+            propShapeType.value = edit.fillType || "white";
+        }
+    }
+
+    // Editor control event listeners
+    editorBtnAddText.addEventListener("click", () => {
+        if (!activePage) return;
+        
+        const newEdit = {
+            id: ++overlayIdCounter,
+            type: "text",
+            x_pct: 10,
+            y_pct: 10,
+            w_pct: null,
+            h_pct: null,
+            text: "Text here",
+            fontSize: 16,
+            fontFamily: "Helvetica",
+            color: "#000000"
+        };
+        
+        activePage.edits.push(newEdit);
+        renderEditElement(newEdit);
+        
+        const el = editorOverlaysLayer.querySelector(`[data-id="${newEdit.id}"]`);
+        if (el) selectElement(newEdit, el);
     });
-    
-    sourceTextarea.addEventListener('input', () => {
-      if (inputTimeout) clearTimeout(inputTimeout);
-      inputTimeout = setTimeout(() => {
-        historyState.save(sourceTextarea.value);
-      }, 500);
+
+    editorBtnAddShape.addEventListener("click", () => {
+        if (!activePage) return;
+        
+        const newEdit = {
+            id: ++overlayIdCounter,
+            type: "shape",
+            x_pct: 20,
+            y_pct: 20,
+            w_pct: 25,
+            h_pct: 10,
+            fillType: "white"
+        };
+        
+        activePage.edits.push(newEdit);
+        renderEditElement(newEdit);
+        
+        const el = editorOverlaysLayer.querySelector(`[data-id="${newEdit.id}"]`);
+        if (el) selectElement(newEdit, el);
     });
-    
-    // Intercept keyboard shortcuts inside canvas
-    canvas.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key === 'z') {
+
+    propTextInput.addEventListener("input", () => {
+        if (activeElement && activeElement.type === "text") {
+            activeElement.text = propTextInput.value;
+            const el = editorOverlaysLayer.querySelector(`[data-id="${activeElement.id}"]`);
+            if (el) el.textContent = propTextInput.value || " ";
+        }
+    });
+
+    propFontFamily.addEventListener("change", () => {
+        if (activeElement && activeElement.type === "text") {
+            activeElement.fontFamily = propFontFamily.value;
+            const el = editorOverlaysLayer.querySelector(`[data-id="${activeElement.id}"]`);
+            if (el) el.style.fontFamily = getFontFamilyCss(activeElement.fontFamily);
+        }
+    });
+
+    propFontSize.addEventListener("input", () => {
+        if (activeElement && activeElement.type === "text") {
+            const sz = parseInt(propFontSize.value, 10);
+            activeElement.fontSize = sz;
+            propFontSizeVal.textContent = sz;
+            const el = editorOverlaysLayer.querySelector(`[data-id="${activeElement.id}"]`);
+            if (el) el.style.fontSize = `${sz}px`;
+        }
+    });
+
+    colorSwatches.forEach(swatch => {
+        swatch.addEventListener("click", () => {
+            if (activeElement && activeElement.type === "text") {
+                colorSwatches.forEach(s => s.classList.remove("active"));
+                swatch.classList.add("active");
+                
+                const color = swatch.dataset.color;
+                activeElement.color = color;
+                const el = editorOverlaysLayer.querySelector(`[data-id="${activeElement.id}"]`);
+                if (el) el.style.color = color;
+            }
+        });
+    });
+
+    propShapeType.addEventListener("change", () => {
+        if (activeElement && activeElement.type === "shape") {
+            const prevType = activeElement.fillType;
+            const newType = propShapeType.value;
+            activeElement.fillType = newType;
+            
+            const el = editorOverlaysLayer.querySelector(`[data-id="${activeElement.id}"]`);
+            if (el) {
+                el.classList.remove(`shape-${prevType}`);
+                el.classList.add(`shape-${newType}`);
+            }
+        }
+    });
+
+    editorBtnDeleteEl.addEventListener("click", () => {
+        if (activeElement && activePage) {
+            activePage.edits = activePage.edits.filter(item => item.id !== activeElement.id);
+            const el = editorOverlaysLayer.querySelector(`[data-id="${activeElement.id}"]`);
+            if (el) el.remove();
+            
+            activeElement = null;
+            editorPropertiesPanel.classList.add("hidden");
+            editorNoSelection.classList.remove("hidden");
+        }
+    });
+
+    editorCloseBtn.addEventListener("click", () => {
+        editorModal.classList.add("hidden");
+        activePage = null;
+        activeElement = null;
+    });
+
+    editorDoneBtn.addEventListener("click", () => {
+        editorModal.classList.add("hidden");
+        activePage = null;
+        activeElement = null;
+        renderPages();
+    });
+
+    // Viewer Event Listeners
+    viewerCloseBtn.addEventListener("click", () => {
+        viewerModal.classList.add("hidden");
+        viewerActivePageId = null;
+        resetViewerZoomPan();
+    });
+
+    viewerModal.addEventListener("click", (e) => {
+        if (e.target === viewerModal) {
+            viewerModal.classList.add("hidden");
+            viewerActivePageId = null;
+            resetViewerZoomPan();
+        }
+    });
+
+    viewerBtnPrev.addEventListener("click", () => {
+        navigateViewer(-1);
+    });
+
+    viewerBtnNext.addEventListener("click", () => {
+        navigateViewer(1);
+    });
+
+    viewerBtnRotL.addEventListener("click", () => {
+        if (viewerActivePageId) {
+            rotatePage(viewerActivePageId, -90);
+            const p = pages.find(page => page.id === viewerActivePageId);
+            if (p) {
+                viewerCanvasContainer.className = "viewer-canvas-container";
+                if (p.rotation) {
+                    viewerCanvasContainer.classList.add(`rotate-${p.rotation}`);
+                }
+            }
+        }
+    });
+
+    viewerBtnRotR.addEventListener("click", () => {
+        if (viewerActivePageId) {
+            rotatePage(viewerActivePageId, 90);
+            const p = pages.find(page => page.id === viewerActivePageId);
+            if (p) {
+                viewerCanvasContainer.className = "viewer-canvas-container";
+                if (p.rotation) {
+                    viewerCanvasContainer.classList.add(`rotate-${p.rotation}`);
+                }
+            }
+        }
+    });
+
+    // Zoom listeners
+    viewerBtnZoomIn.addEventListener("click", () => {
+        viewerZoom = Math.min(viewerZoom + 0.2, 4.0);
+        updateViewerTransform();
+    });
+
+    viewerBtnZoomOut.addEventListener("click", () => {
+        viewerZoom = Math.max(viewerZoom - 0.2, 0.5);
+        updateViewerTransform();
+    });
+
+    viewerBtnZoomReset.addEventListener("click", () => {
+        resetViewerZoomPan();
+    });
+
+    // Panning (Drag) listeners
+    viewerCanvasContainer.addEventListener("mousedown", (e) => {
+        isViewerDragging = true;
+        startDragX = e.clientX - viewerPanX;
+        startDragY = e.clientY - viewerPanY;
+        viewerCanvasContainer.style.cursor = "grabbing";
         e.preventDefault();
-        historyState.undo();
-      }
-      if (e.ctrlKey && e.key === 'y') {
-        e.preventDefault();
-        historyState.redo();
-      }
     });
-    
-    // Intercept keyboard shortcuts inside source view
-    sourceTextarea.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key === 'z') {
-        e.preventDefault();
-        historyState.undo();
-      }
-      if (e.ctrlKey && e.key === 'y') {
-        e.preventDefault();
-        historyState.redo();
-      }
+
+    document.addEventListener("mousemove", (e) => {
+        if (!isViewerDragging) return;
+        viewerPanX = e.clientX - startDragX;
+        viewerPanY = e.clientY - startDragY;
+        updateViewerTransform();
     });
-  }
-}
 
-function setupProjectFilters() {
-  document.querySelectorAll('.status-tab').forEach(tab => {
-    tab.onclick = () => {
-      document.querySelectorAll('.status-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      state.activeFilterStatus = tab.dataset.status;
-      renderTeamView();
-    };
-  });
-  
-  const searchInput = document.getElementById('project-search');
-  if (searchInput) {
-    searchInput.oninput = (e) => {
-      state.searchQuery = e.target.value;
-      renderTeamView();
-    };
-  }
-}
-
-function setAdminTab(tabName) {
-  state.adminActiveTab = tabName;
-  renderAdminView();
-}
-
-function escapeHTML(str) {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-// --- EDITOR HISTORY STATE MANAGEMENT (UNDO / REDO) ---
-
-const historyState = {
-  undoStack: [],
-  redoStack: [],
-  maxSize: 50,
-  
-  init: (initialHTML) => {
-    historyState.undoStack = [initialHTML];
-    historyState.redoStack = [];
-    historyState.updateButtons();
-  },
-  
-  save: (html) => {
-    if (historyState.undoStack.length > 0 && historyState.undoStack[historyState.undoStack.length - 1] === html) {
-      return;
-    }
-    historyState.undoStack.push(html);
-    if (historyState.undoStack.length > historyState.maxSize) {
-      historyState.undoStack.shift();
-    }
-    historyState.redoStack = [];
-    historyState.updateButtons();
-  },
-  
-  undo: () => {
-    if (historyState.undoStack.length <= 1) return;
-    const canvas = document.getElementById('editor-canvas');
-    const current = historyState.undoStack.pop();
-    historyState.redoStack.push(current);
-    
-    const previous = historyState.undoStack[historyState.undoStack.length - 1];
-    canvas.innerHTML = previous;
-    
-    const sourceTextarea = document.getElementById('editor-html-source');
-    if (sourceTextarea && sourceTextarea.style.display !== 'none') {
-      sourceTextarea.value = previous;
-    }
-    
-    historyState.updateButtons();
-  },
-  
-  redo: () => {
-    if (historyState.redoStack.length === 0) return;
-    const canvas = document.getElementById('editor-canvas');
-    const next = historyState.redoStack.pop();
-    historyState.undoStack.push(next);
-    
-    canvas.innerHTML = next;
-    
-    const sourceTextarea = document.getElementById('editor-html-source');
-    if (sourceTextarea && sourceTextarea.style.display !== 'none') {
-      sourceTextarea.value = next;
-    }
-    
-    historyState.updateButtons();
-  },
-  
-  updateButtons: () => {
-    const undoBtn = document.getElementById('editor-btn-undo');
-    const redoBtn = document.getElementById('editor-btn-redo');
-    
-    if (undoBtn) {
-      undoBtn.disabled = historyState.undoStack.length <= 1;
-      undoBtn.style.opacity = historyState.undoStack.length <= 1 ? '0.4' : '1';
-    }
-    if (redoBtn) {
-      redoBtn.disabled = historyState.redoStack.length === 0;
-      redoBtn.style.opacity = historyState.redoStack.length === 0 ? '0.4' : '1';
-    }
-  }
-};
-
-// --- EXISTING TABLE EDITING OPERATIONS ---
-
-function getSelectedTableCell(canvasContext = null) {
-  const selection = window.getSelection();
-  if (!selection.rangeCount) return null;
-  
-  let node = selection.anchorNode;
-  const canvas = canvasContext || document.getElementById('editor-canvas');
-  
-  while (node && node !== canvas && node !== document.body) {
-    if (node.nodeName === 'TD' || node.nodeName === 'TH') {
-      return node;
-    }
-    node = node.parentNode;
-  }
-  return null;
-}
-
-function handleTableAction(action) {
-  if (!action) return;
-  
-  const cell = getSelectedTableCell();
-  if (!cell) {
-    alert("Please place your cursor inside a table cell to modify the table.");
-    return;
-  }
-  
-  const row = cell.closest('tr');
-  const table = cell.closest('table');
-  
-  switch (action) {
-    case 'addRowAbove':
-      insertTableRow(row, true);
-      break;
-    case 'addRowBelow':
-      insertTableRow(row, false);
-      break;
-    case 'deleteRow':
-      deleteTableRow(row, table);
-      break;
-    case 'addColumnLeft':
-      insertTableColumn(table, cell.cellIndex, true);
-      break;
-    case 'addColumnRight':
-      insertTableColumn(table, cell.cellIndex, false);
-      break;
-    case 'deleteColumn':
-      deleteTableColumn(table, cell.cellIndex);
-      break;
-  }
-  
-  // Save canvas state after modifying existing table
-  historyState.save(document.getElementById('editor-canvas').innerHTML);
-}
-
-function insertTableRow(currentRow, above) {
-  const newRow = document.createElement('tr');
-  const numCells = currentRow.cells.length;
-  
-  for (let i = 0; i < numCells; i++) {
-    const isHeader = currentRow.cells[i].nodeName === 'TH';
-    const newCell = document.createElement(isHeader ? 'th' : 'td');
-    newCell.innerHTML = '<br>';
-    newRow.appendChild(newCell);
-  }
-  
-  if (above) {
-    currentRow.parentNode.insertBefore(newRow, currentRow);
-  } else {
-    currentRow.parentNode.insertBefore(newRow, currentRow.nextSibling);
-  }
-}
-
-function deleteTableRow(currentRow, table) {
-  const allRows = table.querySelectorAll('tr');
-  if (allRows.length <= 1) {
-    if (confirm("This is the last row. Delete the entire table?")) {
-      table.remove();
-    }
-  } else {
-    currentRow.remove();
-  }
-}
-
-function insertTableColumn(table, colIndex, left) {
-  const rows = table.querySelectorAll('tr');
-  rows.forEach(r => {
-    if (r.cells.length > colIndex) {
-      const targetCell = r.cells[colIndex];
-      const isHeader = targetCell.nodeName === 'TH';
-      const newCell = document.createElement(isHeader ? 'th' : 'td');
-      newCell.innerHTML = '<br>';
-      
-      if (left) {
-        r.insertBefore(newCell, targetCell);
-      } else {
-        r.insertBefore(newCell, targetCell.nextSibling);
-      }
-    } else if (r.cells.length > 0) {
-      const isHeader = r.parentNode.nodeName === 'THEAD';
-      const newCell = document.createElement(isHeader ? 'th' : 'td');
-      newCell.innerHTML = '<br>';
-      r.appendChild(newCell);
-    }
-  });
-}
-
-function deleteTableColumn(table, colIndex) {
-  const rows = table.querySelectorAll('tr');
-  let maxCells = 0;
-  rows.forEach(r => {
-    if (r.cells.length > maxCells) {
-      maxCells = r.cells.length;
-    }
-  });
-  
-  if (maxCells <= 1) {
-    if (confirm("This is the last column. Delete the entire table?")) {
-      table.remove();
-      return;
-    }
-  }
-  
-  rows.forEach(r => {
-    if (r.cells.length > colIndex) {
-      r.cells[colIndex].remove();
-    }
-  });
-}
-
-// --- PROJECT OPENING POSITIONS FORM HELPERS ---
-
-function addPositionInputRow() {
-  createPositionInputRow({
-    title: '',
-    count: '',
-    requirements: [
-      { label: 'Qualification Required', value: '' },
-      { label: 'Experience Required', value: '' },
-      { label: 'Salary (Euro)', value: '' },
-      { label: 'Salary (INR)', value: '' }
-    ],
-    description: '<p><br></p>'
-  });
-}
-
-function createPositionInputRow(posData = {}) {
-  const container = document.getElementById('project-positions-inputs-container');
-  if (!container) return;
-  
-  // Migrate old formats dynamically if they are loaded
-  let requirements = posData.requirements || [];
-  if (requirements.length === 0) {
-    if (posData.qualification) requirements.push({ label: 'Qualification Required', value: posData.qualification });
-    if (posData.experience) requirements.push({ label: 'Experience Required', value: posData.experience });
-    
-    const currency = posData.currency || 'EURO';
-    const salaryVal = posData.salaryVal || posData.salaryEuro || '';
-    if (salaryVal) requirements.push({ label: `Salary (${currency})`, value: salaryVal });
-    
-    if (posData.salaryInr) requirements.push({ label: 'Salary (INR)', value: posData.salaryInr });
-  }
-  
-  // Default fields for new position card if still empty
-  if (requirements.length === 0) {
-    requirements = [
-      { label: 'Qualification Required', value: '' },
-      { label: 'Experience Required', value: '' },
-      { label: 'Salary (Euro)', value: '' },
-      { label: 'Salary (INR)', value: '' }
-    ];
-  }
-  
-  const cardId = 'pos-card-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
-  const card = document.createElement('div');
-  card.className = 'position-input-card';
-  card.id = cardId;
-  card.style.cssText = `
-    border: 1px solid var(--border-color); 
-    padding: 20px; 
-    border-radius: var(--radius-sm); 
-    background: var(--bg-main); 
-    display: flex; 
-    flex-direction: column; 
-    gap: 15px; 
-    position: relative;
-    margin-bottom: 20px;
-  `;
-  
-  // Generate HTML for requirements fields
-  let reqsHTML = '';
-  requirements.forEach((req) => {
-    reqsHTML += createReqInputRowHTML(req.label, req.value);
-  });
-  
-  card.innerHTML = `
-    <button type="button" class="btn-icon delete" onclick="this.closest('.position-input-card').remove()" style="position: absolute; top: 12px; right: 12px; z-index: 5; height: 32px; width: 32px; display:flex; justify-content:center; align-items:center;" title="Remove Position"><i class="fa-solid fa-trash"></i></button>
-    
-    <div class="form-row">
-      <div class="form-group">
-        <label style="font-weight:600; font-size:0.85rem;">Position Name / Title</label>
-        <input type="text" class="form-control pos-title-input" placeholder="e.g. Industrial Electrician" value="${escapeHTML(posData.title || '')}" required>
-      </div>
-      <div class="form-group">
-        <label style="font-weight:600; font-size:0.85rem;">Openings Count</label>
-        <input type="number" class="form-control pos-count-input" placeholder="e.g. 10" value="${posData.count || ''}" min="1" required>
-      </div>
-    </div>
-    
-    <!-- DYNAMIC SPECIFICATION FIELDS LIST -->
-    <div class="form-group">
-      <label style="display:flex; justify-content:space-between; align-items:center; font-weight:600; font-size:0.85rem;">
-        <span>Position Requirements Table Fields</span>
-        <button type="button" class="btn-secondary" onclick="addRequirementFieldToCard('${cardId}')" style="padding: 4px 10px; font-size: 0.75rem; height: 28px; display:flex; align-items:center; gap:4px; border-radius:4px;">
-          <i class="fa-solid fa-plus"></i> Add Field
-        </button>
-      </label>
-      <div class="pos-reqs-inputs-container" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
-        ${reqsHTML}
-      </div>
-    </div>
-    
-    <!-- FORMATTABLE JOB DETAILS -->
-    <div class="form-group">
-      <label style="font-weight:600; font-size:0.85rem;">Additional Specifications / Job Details (Formattable)</label>
-      
-      <!-- Full Formatting Toolbar for Position -->
-      <div class="editor-toolbar" style="border: 1px solid var(--border-color); border-bottom: none; border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: var(--bg-card); display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; align-items: center;">
-        <!-- Headings -->
-        <select class="editor-select" onchange="execMiniCommand('${cardId}', 'formatBlock', this.value); this.selectedIndex=0;" title="Headers & Typography" style="height: 32px;">
-          <option value="" disabled selected>Formatting</option>
-          <option value="<h2>">Main Heading (H2)</option>
-          <option value="<h3>">Subheading (H3)</option>
-          <option value="<p>">Normal Paragraph</option>
-        </select>
-        
-        <select class="editor-select" onchange="execMiniCommand('${cardId}', 'fontName', this.value); this.selectedIndex=0;" title="Font Family" style="height: 32px;">
-          <option value="" disabled selected>Font Family</option>
-          <option value="Arial">Arial</option>
-          <option value="Courier New">Courier</option>
-          <option value="Georgia">Georgia</option>
-          <option value="Times New Roman">Times</option>
-          <option value="Verdana">Verdana</option>
-          <option value="Inter">Inter</option>
-        </select>
-
-        <select class="editor-select" onchange="execMiniCommand('${cardId}', 'fontSize', this.value); this.selectedIndex=0;" title="Font Size" style="height: 32px;">
-          <option value="" disabled selected>Font Size</option>
-          <option value="1">Smallest</option>
-          <option value="2">Small</option>
-          <option value="3">Normal</option>
-          <option value="4">Medium</option>
-          <option value="5">Large</option>
-          <option value="6">Largest</option>
-          <option value="7">Huge</option>
-        </select>
-        
-        <select class="editor-select" onchange="applyLineHeight('${cardId}', this.value); this.selectedIndex=0;" title="Line Height" style="height: 32px;">
-          <option value="" disabled selected>Line Height</option>
-          <option value="1.0">1.0</option>
-          <option value="1.2">1.2</option>
-          <option value="1.5">1.5</option>
-          <option value="2.0">2.0</option>
-        </select>
-        
-        <div class="editor-divider"></div>
-        
-        <!-- Inline Styles -->
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'bold')" title="Bold"><i class="fa-solid fa-bold"></i></button>
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'italic')" title="Italic"><i class="fa-solid fa-italic"></i></button>
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'underline')" title="Underline"><i class="fa-solid fa-underline"></i></button>
-        
-        <div class="editor-divider"></div>
-        
-        <!-- Alignments -->
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'justifyLeft')" title="Align Left"><i class="fa-solid fa-align-left"></i></button>
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'justifyCenter')" title="Align Center"><i class="fa-solid fa-align-center"></i></button>
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'justifyRight')" title="Align Right"><i class="fa-solid fa-align-right"></i></button>
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'justifyFull')" title="Justify"><i class="fa-solid fa-align-justify"></i></button>
-        
-        <div class="editor-divider"></div>
-        
-        <!-- Lists -->
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'insertUnorderedList')" title="Bulleted List"><i class="fa-solid fa-list-ul"></i></button>
-        <button type="button" class="editor-btn" onclick="execMiniCommand('${cardId}', 'insertOrderedList')" title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
-        
-        <div class="editor-divider"></div>
-        
-        <!-- Custom Actions (Tables) -->
-        <button type="button" class="editor-btn" onclick="openTableCreatorForCard('${cardId}')" title="Insert Zebra Striped Table" style="color: var(--secondary-color); width: auto; padding: 0 10px;">
-          <i class="fa-solid fa-table"></i> Insert Striped Table
-        </button>
-        
-        <div class="editor-divider"></div>
-        
-        <select class="editor-select" onchange="handleTableActionForCard('${cardId}', this.value); this.selectedIndex=0;" title="Table Operations" style="color: var(--secondary-color); height: 32px;">
-          <option value="" disabled selected>Table Actions</option>
-          <option value="addRowAbove">Add Row Above</option>
-          <option value="addRowBelow">Add Row Below</option>
-          <option value="deleteRow">Delete Row</option>
-          <option value="addColumnLeft">Add Column Left</option>
-          <option value="addColumnRight">Add Column Right</option>
-          <option value="deleteColumn">Delete Column</option>
-        </select>
-        
-        <div class="editor-divider"></div>
-        
-        <!-- HTML Source view -->
-        <button type="button" class="editor-btn source-btn-${cardId}" onclick="toggleSourceModeForCard('${cardId}')" title="Toggle Raw HTML Source" style="margin-left:auto; width: auto; padding: 0 10px;">
-          <i class="fa-solid fa-code"></i> Source HTML
-        </button>
-      </div>
-      
-      <div class="form-control pos-description-input rich-text-content" contenteditable="true" style="min-height: 200px; overflow-y:auto; background: var(--bg-card); border-radius:0 0 var(--radius-sm) var(--radius-sm); outline:none; border-top:none; border:1px solid var(--border-color); padding:16px;" placeholder="Detailed Project Specifications & Requirements for this position...">${posData.description || '<p><br></p>'}</div>
-      <textarea class="form-control pos-description-source" style="display:none; font-family:monospace; min-height:200px; border-radius:0 0 var(--radius-sm) var(--radius-sm); border:1px solid var(--border-color); border-top:none; resize:vertical; padding:16px;"></textarea>
-    </div>
-  `;
-  container.appendChild(card);
-  
-  // Bind selection save events to the contenteditable editor
-  const editor = card.querySelector('.pos-description-input');
-  if (editor) {
-    editor.addEventListener('mouseup', () => saveCardRange(cardId));
-    editor.addEventListener('keyup', () => saveCardRange(cardId));
-    editor.addEventListener('blur', () => saveCardRange(cardId));
-    
-    // Clean pasted HTML of custom font sizes, families, and colors
-    editor.addEventListener('paste', (e) => {
-      e.preventDefault();
-      let html = (e.originalEvent || e).clipboardData.getData('text/html');
-      if (!html) {
-        const text = (e.originalEvent || e).clipboardData.getData('text/plain');
-        document.execCommand('insertText', false, text);
-        return;
-      }
-      
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      const allElements = doc.body.querySelectorAll('*');
-      
-      allElements.forEach(el => {
-        el.style.fontSize = '';
-        el.style.fontFamily = '';
-        el.style.color = '';
-        el.style.backgroundColor = '';
-        el.removeAttribute('face');
-        el.removeAttribute('size');
-        el.removeAttribute('color');
-        
-        if (el.nodeName === 'FONT') {
-          const span = doc.createElement('span');
-          span.innerHTML = el.innerHTML;
-          el.parentNode.replaceChild(span, el);
+    document.addEventListener("mouseup", () => {
+        if (isViewerDragging) {
+            isViewerDragging = false;
+            viewerCanvasContainer.style.cursor = "grab";
         }
-      });
-      
-      document.execCommand('insertHTML', false, doc.body.innerHTML);
     });
-  }
-}
 
-function createReqInputRowHTML(label = '', value = '') {
-  return `
-    <div class="pos-req-row" style="display:flex; gap:10px; align-items:center;">
-      <input type="text" class="form-control pos-req-label" placeholder="Field Label (e.g. Qualification)" value="${escapeHTML(label)}" style="flex: 1;" required>
-      <input type="text" class="form-control pos-req-val" placeholder="Field Value (e.g. ITI / Diploma)" value="${escapeHTML(value)}" style="flex: 2;" required>
-      <button type="button" class="btn-icon delete" onclick="this.closest('.pos-req-row').remove()" title="Delete Field" style="height:36px; width:36px; min-width:36px; display:flex; justify-content:center; align-items:center;"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-  `;
-}
-
-function addRequirementFieldToCard(cardId) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const container = card.querySelector('.pos-reqs-inputs-container');
-  if (!container) return;
-  
-  const div = document.createElement('div');
-  div.innerHTML = createReqInputRowHTML('', '');
-  container.appendChild(div.firstElementChild);
-}
-
-function execMiniCommand(cardId, command, value = null) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const editor = card.querySelector('.pos-description-input');
-  if (!editor) return;
-  
-  editor.focus();
-  restoreCardRange(cardId);
-  document.execCommand(command, false, value);
-  saveCardRange(cardId);
-}
-
-function applyLineHeight(cardId, value) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const editor = card.querySelector('.pos-description-input');
-  if (!editor) return;
-  
-  editor.focus();
-  restoreCardRange(cardId);
-  
-  const selection = window.getSelection();
-  if (selection.rangeCount > 0) {
-    let node = selection.focusNode;
-    let foundBlock = false;
-    while (node && node !== editor) {
-      if (node.nodeType === 1 && ['P', 'DIV', 'H1', 'H2', 'H3', 'LI', 'TD'].includes(node.tagName)) {
-        node.style.lineHeight = value;
-        foundBlock = true;
-        break;
-      }
-      node = node.parentNode;
-    }
-    
-    if (!foundBlock) {
-      document.execCommand('formatBlock', false, 'p');
-      // Re-evaluate after wrapping
-      let newNode = window.getSelection().focusNode;
-      while (newNode && newNode !== editor) {
-        if (newNode.nodeType === 1 && newNode.tagName === 'P') {
-          newNode.style.lineHeight = value;
-          break;
+    // Touch support for Panning (Drag)
+    viewerCanvasContainer.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 1) {
+            isViewerDragging = true;
+            const touch = e.touches[0];
+            startDragX = touch.clientX - viewerPanX;
+            startDragY = touch.clientY - viewerPanY;
         }
-        newNode = newNode.parentNode;
-      }
-    }
-  }
-  
-  saveCardRange(cardId);
-}
+    }, { passive: true });
 
-let currentCardForTable = null;
-
-function openTableCreatorForCard(cardId) {
-  currentCardForTable = cardId;
-  const dialog = document.getElementById('table-creator-dialog');
-  if(dialog) dialog.classList.add('active');
-  const rowsInput = document.getElementById('table-rows');
-  if (rowsInput) {
-    rowsInput.value = '3';
-    document.getElementById('table-cols').value = '3';
-    rowsInput.focus();
-  }
-}
-
-function handleTableActionForCard(cardId, action) {
-  if (!action) return;
-  
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const canvas = card.querySelector('.pos-description-input');
-  if (!canvas) return;
-  
-  canvas.focus();
-  restoreCardRange(cardId);
-  
-  const cell = getSelectedTableCell(canvas);
-  if (!cell) {
-    alert("Please place your cursor inside a table cell to modify the table.");
-    return;
-  }
-  
-  const row = cell.closest('tr');
-  const table = cell.closest('table');
-  
-  switch (action) {
-    case 'addRowAbove': insertTableRow(row, true); break;
-    case 'addRowBelow': insertTableRow(row, false); break;
-    case 'deleteRow': deleteTableRow(row, table); break;
-    case 'addColumnLeft': insertTableColumn(table, cell.cellIndex, true); break;
-    case 'addColumnRight': insertTableColumn(table, cell.cellIndex, false); break;
-    case 'deleteColumn': deleteTableColumn(table, cell.cellIndex); break;
-  }
-  saveCardRange(cardId);
-}
-
-function insertZebraTableForCard(cardId, rows, cols) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const canvas = card.querySelector('.pos-description-input');
-  if (!canvas) return;
-  
-  canvas.focus();
-  restoreCardRange(cardId);
-  
-  let tableHTML = '<table class="gowell-striped-table" style="width: 100%; border-collapse: collapse; margin: 15px 0;">';
-  tableHTML += '<thead><tr>';
-  for (let c = 1; c <= cols; c++) {
-    tableHTML += `<th>Heading ${c}</th>`;
-  }
-  tableHTML += '</tr></thead>';
-  tableHTML += '<tbody>';
-  for (let r = 1; r <= rows; r++) {
-    tableHTML += '<tr>';
-    for (let c = 1; c <= cols; c++) {
-      tableHTML += `<td>Cell Row ${r} - Col ${c}</td>`;
-    }
-    tableHTML += '</tr>';
-  }
-  tableHTML += '</tbody></table><p><br></p>';
-  
-  document.execCommand('insertHTML', false, tableHTML);
-  saveCardRange(cardId);
-}
-
-function toggleSourceModeForCard(cardId) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const canvas = card.querySelector('.pos-description-input');
-  const sourceTextarea = card.querySelector('.pos-description-source');
-  const sourceBtn = card.querySelector('.source-btn-' + cardId);
-  
-  if (!canvas || !sourceTextarea) return;
-  
-  const isSourceMode = canvas.style.display === 'none';
-  
-  if (!isSourceMode) {
-    sourceTextarea.value = canvas.innerHTML;
-    canvas.style.display = 'none';
-    sourceTextarea.style.display = 'block';
-    if (sourceBtn) sourceBtn.classList.add('active');
-    
-    // Disable other buttons
-    card.querySelectorAll('.editor-toolbar button:not(.source-btn-' + cardId + ')').forEach(btn => {
-      btn.style.opacity = '0.5';
-      btn.style.pointerEvents = 'none';
-    });
-    card.querySelectorAll('.editor-toolbar select').forEach(select => {
-      select.disabled = true;
-    });
-  } else {
-    canvas.innerHTML = sourceTextarea.value;
-    sourceTextarea.style.display = 'none';
-    canvas.style.display = 'block';
-    if (sourceBtn) sourceBtn.classList.remove('active');
-    
-    // Enable other buttons
-    card.querySelectorAll('.editor-toolbar button:not(.source-btn-' + cardId + ')').forEach(btn => {
-      btn.style.opacity = '1';
-      btn.style.pointerEvents = 'auto';
-    });
-    card.querySelectorAll('.editor-toolbar select').forEach(select => {
-      select.disabled = false;
-    });
-  }
-}
-
-function setMiniFontSize(cardId, sizePx) {
-  if (!sizePx) return;
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const editor = card.querySelector('.pos-description-input');
-  if (!editor) return;
-  
-  editor.focus();
-  restoreCardRange(cardId);
-  const selection = window.getSelection();
-  if (!selection.rangeCount) return;
-  
-  const range = selection.getRangeAt(0);
-  if (range.collapsed) return;
-  
-  // Strip preexisting inline font sizes from any elements inside the selection range
-  const allElements = editor.querySelectorAll('*');
-  allElements.forEach(el => {
-    if (range.intersectsNode(el)) {
-      el.style.fontSize = '';
-      el.removeAttribute('size');
-    }
-  });
-  
-  // Use native execCommand font size tagger, then replace with inline styled span
-  document.execCommand('fontSize', false, '7');
-  const fontTags = editor.querySelectorAll('font[size="7"]');
-  fontTags.forEach(font => {
-    const span = document.createElement('span');
-    span.style.fontSize = sizePx;
-    span.innerHTML = font.innerHTML;
-    font.parentNode.replaceChild(span, font);
-  });
-  
-  saveCardRange(cardId);
-}
-
-function setMiniLineHeight(cardId, lineHeight) {
-  if (!lineHeight) return;
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const editor = card.querySelector('.pos-description-input');
-  if (!editor) return;
-  
-  editor.focus();
-  restoreCardRange(cardId);
-  const selection = window.getSelection();
-  if (!selection.rangeCount) return;
-  
-  const range = selection.getRangeAt(0);
-  const blockTypes = ['P', 'LI', 'DIV', 'H1', 'H2', 'H3', 'H4'];
-  const allElements = Array.from(editor.querySelectorAll('*'));
-  
-  // Strip preexisting inline line heights from any nested child elements inside the selection range
-  allElements.forEach(el => {
-    if (range.intersectsNode(el)) {
-      el.style.lineHeight = '';
-    }
-  });
-  
-  let appliedCount = 0;
-  allElements.forEach(el => {
-    if (blockTypes.includes(el.nodeName) && range.intersectsNode(el)) {
-      el.style.lineHeight = lineHeight;
-      appliedCount++;
-    }
-  });
-  
-  if (appliedCount === 0) {
-    let element = selection.anchorNode;
-    if (element.nodeType === 3) {
-      element = element.parentNode;
-    }
-    while (element && element !== editor && !blockTypes.includes(element.nodeName)) {
-      element = element.parentNode;
-    }
-    if (element && element !== editor) {
-      element.style.lineHeight = lineHeight;
-    } else {
-      if (editor.childNodes.length > 0) {
-        const div = document.createElement('div');
-        div.style.lineHeight = lineHeight;
-        while (editor.firstChild) {
-          div.appendChild(editor.firstChild);
+    viewerCanvasContainer.addEventListener("touchmove", (e) => {
+        if (!isViewerDragging) return;
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            viewerPanX = touch.clientX - startDragX;
+            viewerPanY = touch.clientY - startDragY;
+            updateViewerTransform();
         }
-        editor.appendChild(div);
-      } else {
-        editor.style.lineHeight = lineHeight;
-      }
-    }
-  }
-  
-  saveCardRange(cardId);
-}
+    }, { passive: true });
 
-function saveCardRange(cardId) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const selection = window.getSelection();
-  if (selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    const editor = card.querySelector('.pos-description-input');
-    if (editor && editor.contains(range.commonAncestorContainer)) {
-      card._savedRange = range.cloneRange();
-    }
-  }
-}
+    viewerCanvasContainer.addEventListener("touchend", () => {
+        isViewerDragging = false;
+    });
 
-function restoreCardRange(cardId) {
-  const card = document.getElementById(cardId);
-  if (!card || !card._savedRange) return false;
-  
-  const selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(card._savedRange);
-  return true;
-}
+    function navigateViewer(dir) {
+        if (!viewerActivePageId) return;
+        const currentIndex = pages.findIndex(page => page.id === viewerActivePageId);
+        if (currentIndex === -1) return;
+        
+        const nextIndex = currentIndex + dir;
+        if (nextIndex >= 0 && nextIndex < pages.length) {
+            const nextPage = pages[nextIndex];
+            viewerActivePageId = nextPage.id;
+            renderViewerPage(nextPage);
+        }
+    }
+
+    document.addEventListener("keydown", (e) => {
+        if (viewerModal.classList.contains("hidden")) return;
+        
+        if (e.key === "Escape") {
+            viewerModal.classList.add("hidden");
+            viewerActivePageId = null;
+            resetViewerZoomPan();
+        } else if (e.key === "ArrowLeft") {
+            navigateViewer(-1);
+        } else if (e.key === "ArrowRight") {
+            navigateViewer(1);
+        }
+    });
+
+    // ══════════════════════════════════════════════════════════════
+    //  Event Listeners
+    // ══════════════════════════════════════════════════════════════
+
+    // Upload zone click
+    dropArea.addEventListener("click", () => fileInput.click());
+
+    // File input change
+    fileInput.addEventListener("change", (e) => {
+        processFiles(Array.from(e.target.files));
+        fileInput.value = "";
+    });
+
+    // Add more files
+    btnAddMore.addEventListener("click", () => fileInputMore.click());
+    fileInputMore.addEventListener("change", (e) => {
+        processFiles(Array.from(e.target.files));
+        fileInputMore.value = "";
+    });
+
+    // Drag & drop onto upload zone
+    ["dragenter", "dragover"].forEach(evt => {
+        dropArea.addEventListener(evt, (e) => { e.preventDefault(); dropArea.classList.add("drag-over"); });
+    });
+    ["dragleave", "drop"].forEach(evt => {
+        dropArea.addEventListener(evt, () => dropArea.classList.remove("drag-over"));
+    });
+    dropArea.addEventListener("drop", (e) => {
+        e.preventDefault();
+        processFiles(Array.from(e.dataTransfer.files));
+    });
+
+    // Also allow dropping files onto the pages grid area
+    document.addEventListener("dragover", (e) => e.preventDefault());
+    document.addEventListener("drop", (e) => {
+        e.preventDefault();
+        if (e.dataTransfer.files.length && pages.length > 0) {
+            processFiles(Array.from(e.dataTransfer.files));
+        }
+    });
+
+    // Clear all
+    btnClear.addEventListener("click", () => {
+        pages = [];
+        renderPages();
+        updateUI();
+        showToast("All pages cleared.");
+    });
+
+    // Make PDF
+    btnMakePdf.addEventListener("click", makePdf);
+
+    // Initial state
+    updateUI();
+})();
